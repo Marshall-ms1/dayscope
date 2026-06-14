@@ -678,6 +678,7 @@ dv.container.innerHTML = html;
                 "active": d.get("active_hours", 0),
                 "focus": round(d.get("avg_focus", 0), 2),
                 "events": d.get("total_events", 0),
+                "hourly": d.get("hourly", [0.0] * 24),  # 24 小时活跃度
             })
             cur += timedelta(days=1)
 
@@ -712,48 +713,102 @@ const DAYS = __DAYS__;
 const MONTHS = __MONTHS__;
 const YEAR = __YEAR__;
 
-function colorByHours(h) {
-  if (h === 0) return "#ebedf0";
-  if (h < 2)  return "#9be9a8";
-  if (h < 5)  return "#40c463";
-  if (h < 10) return "#30a14e";
+function dayColor(d) {
+  // 6 档：有数据但全挂机（浅蓝）→ 活跃小时梯度（绿色）
+  if (!d || d.events === 0) return "#ebedf0";
+  if (d.active === 0)         return "#c5d4f0";
+  if (d.active < 1)           return "#9be9a8";
+  if (d.active < 3)           return "#40c463";
+  if (d.active < 6)           return "#30a14e";
   return "#216e39";
 }
-function labelByHours(h) {
-  if (h === 0) return "无活动";
-  if (h < 2)  return "1-2h";
-  if (h < 5)  return "2-5h";
-  if (h < 10) return "5-10h";
-  return "10h+";
+function dayLabel(d) {
+  if (!d || d.events === 0) return "无数据";
+  if (d.active === 0)         return "有数据（挂机）";
+  if (d.active < 1)           return "<1h 活跃";
+  if (d.active < 3)           return "1-3h 活跃";
+  if (d.active < 6)           return "3-6h 活跃";
+  return "6h+ 活跃";
+}
+function hourColor(act) {
+  if (act === 0)  return "#ebedf0";
+  if (act < 0.05) return "#c5d4f0";
+  if (act < 0.2)  return "#9be9a8";
+  if (act < 0.5)  return "#40c463";
+  if (act < 0.8)  return "#30a14e";
+  return "#216e39";
 }
 function pad2(n) { return String(n).padStart(2, "0"); }
 
+// 渲染一个月的格子
 function renderMonth(monthStr) {
   const [y, m] = monthStr.split("-").map(Number);
   const first = new Date(y, m - 1, 1);
   const last  = new Date(y, m, 0);
   const daysInMonth = last.getDate();
-  const startWeekday = first.getDay(); // 0=Sun, 1=Mon, ...
+  const startWeekday = first.getDay();
   const monthDays = DAYS.filter(d => d.date.startsWith(monthStr));
-  // 周一开始：startWeekday 0=Sun → 6=offset, 1=Mon → 0=offset
   const offset = (startWeekday + 6) % 7;
   let cells = "";
   for (let i = 0; i < offset; i++) {
     cells += `<div class="ds-cell empty"></div>`;
   }
   for (let i = 0; i < daysInMonth; i++) {
-    const dd = monthDays[i];
-    const color = colorByHours(dd.active);
-    const dateStr = dd.date;
-    const title = `${dateStr} · ${labelByHours(dd.active)} · 专注度 ${(dd.focus*100).toFixed(0)}% · ${dd.events} 事件`;
+    const dd = monthDays[i] || { date: `${monthStr}-${pad2(i+1)}`, active: 0, focus: 0, events: 0 };
+    const color = dayColor(dd);
+    const title = `${dd.date} · ${dayLabel(dd)} · 专注度 ${(dd.focus*100).toFixed(0)}% · ${dd.events} 事件`;
     cells += `<a class="ds-cell"
-                 href="${dateStr}/日报.md"
+                 href="${dd.date}/日报.md"
                  style="background:${color};"
                  title="${title}"></a>`;
   }
-  return `<div class="ds-month">
-    <div class="ds-month-name">${m}月</div>
+  return `<div class="ds-month" data-month="${monthStr}">
+    <div class="ds-month-name" onclick="window.__toggleMd('${monthStr}', this)" style="cursor:pointer;">
+      <span class="ds-month-toggle">▸</span> ${m}月
+    </div>
     <div class="ds-month-grid">${cells}</div>
+  </div>`;
+}
+
+// 渲染月度详情（30 天 × 24 小时热力图）
+function renderMonthDetail(monthStr) {
+  const monthDays = DAYS.filter(d => d.date.startsWith(monthStr));
+  if (monthDays.length === 0) {
+    return `<div class="ds-md-empty">${monthStr} 暂无数据</div>`;
+  }
+  // 表头：24 小时
+  let header = `<div class="ds-md-row ds-md-header-row">
+    <div class="ds-md-date"></div>
+    <div class="ds-md-cells">`;
+  for (let h = 0; h < 24; h++) {
+    header += `<div class="ds-md-hour-label" data-h="${h}">${h % 3 === 0 ? h : ""}</div>`;
+  }
+  header += `</div></div>`;
+
+  // 行：每天
+  let rows = "";
+  for (const d of monthDays) {
+    const dayNum = d.date.slice(8);
+    let cellsHtml = "";
+    for (let h = 0; h < 24; h++) {
+      const act = (d.hourly && d.hourly[h]) || 0;
+      const color = hourColor(act);
+      const title = `${d.date} ${pad2(h)}:00 · 活跃度 ${(act*100).toFixed(0)}%`;
+      cellsHtml += `<a class="ds-md-cell"
+                       href="${d.date}/日报.md"
+                       style="background:${color};"
+                       title="${title}"></a>`;
+    }
+    rows += `<div class="ds-md-row">
+      <div class="ds-md-date">${dayNum}</div>
+      <div class="ds-md-cells">${cellsHtml}</div>
+    </div>`;
+  }
+
+  return `<div class="ds-md-wrap">
+    <div class="ds-md-title">📊 ${monthStr} · 每日 24 小时活跃度（点击格子跳转到日报）</div>
+    ${header}
+    ${rows}
   </div>`;
 }
 
@@ -770,12 +825,28 @@ const monthStatsHtml = MONTHS.map(m => {
   </div>`;
 }).join("");
 
-// 总览
 const totalActive = MONTHS.reduce((a,b) => a+b.active, 0);
 const totalDays = DAYS.filter(d => d.events > 0).length;
 const yearAvgFocus = MONTHS.length > 0
   ? (MONTHS.reduce((a,b)=>a+b.avg_focus,0) / MONTHS.length * 100).toFixed(0)
   : 0;
+
+// 全局 toggle 函数
+window.__toggleMd = function(monthStr, btn) {
+  const wrap = document.getElementById(`ds-md-${monthStr}`);
+  if (wrap) {
+    wrap.remove();
+    btn.querySelector(".ds-month-toggle").textContent = "▸";
+    return;
+  }
+  const month = btn.closest(".ds-month");
+  const detail = document.createElement("div");
+  detail.id = `ds-md-${monthStr}`;
+  detail.className = "ds-md-detail";
+  detail.innerHTML = renderMonthDetail(monthStr);
+  month.parentElement.insertBefore(detail, month.nextSibling);
+  btn.querySelector(".ds-month-toggle").textContent = "▾";
+};
 
 const html = `
 <style>
@@ -794,44 +865,24 @@ const html = `
   justify-content: space-between;
   margin-bottom: 16px;
 }
-.ds-cal-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-normal);
-}
-.ds-cal-summary {
-  font-size: 12px;
-  color: var(--text-muted);
-  display: flex;
-  gap: 16px;
-}
-.ds-cal-summary span strong {
-  color: var(--text-accent);
-  font-weight: 600;
-  margin-left: 4px;
-}
-.ds-months {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px 24px;
-  margin-bottom: 20px;
-}
-.ds-month {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.ds-cal-title { font-size: 20px; font-weight: 700; color: var(--text-normal); }
+.ds-cal-summary { font-size: 12px; color: var(--text-muted); display: flex; gap: 16px; }
+.ds-cal-summary span strong { color: var(--text-accent); font-weight: 600; margin-left: 4px; }
+.ds-months { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 24px; margin-bottom: 20px; }
+.ds-month { display: flex; flex-direction: column; gap: 4px; }
 .ds-month-name {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
+  user-select: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
 }
-.ds-month-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 3px;
-}
+.ds-month-name:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.ds-month-toggle { font-size: 10px; margin-right: 4px; }
+.ds-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
 .ds-cell {
   aspect-ratio: 1;
   border-radius: 3px;
@@ -849,11 +900,7 @@ const html = `
   position: relative;
   border-color: rgba(0,0,0,0.2);
 }
-.ds-cell.empty {
-  background: transparent !important;
-  border: none !important;
-  pointer-events: none;
-}
+.ds-cell.empty { background: transparent !important; border: none !important; pointer-events: none; }
 .ds-legend {
   display: flex;
   align-items: center;
@@ -863,50 +910,94 @@ const html = `
   padding: 12px 0;
   border-top: 1px solid var(--background-modifier-border);
   margin-top: 8px;
+  flex-wrap: wrap;
 }
-.ds-legend-cell {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  display: inline-block;
-  border: 1px solid rgba(0,0,0,0.05);
-}
-.ds-mstats {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--background-modifier-border);
-}
-.ds-mstat {
-  padding: 10px 6px;
-  background: var(--background-secondary);
-  border-radius: 6px;
-  text-align: center;
-  transition: transform 0.15s;
-}
+.ds-legend-cell { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0,0,0,0.05); }
+.ds-mstats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--background-modifier-border); }
+.ds-mstat { padding: 10px 6px; background: var(--background-secondary); border-radius: 6px; text-align: center; transition: transform 0.15s; }
 .ds-mstat:hover { transform: translateY(-2px); }
-.ds-mstat-name {
+.ds-mstat-name { font-weight: 600; color: var(--text-normal); font-size: 12px; margin-bottom: 4px; }
+.ds-mstat-active { font-size: 13px; color: #30a14e; font-weight: 600; margin-bottom: 2px; }
+.ds-mstat-focus { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+.ds-mstat-events { font-size: 10px; color: var(--text-faint, var(--text-muted)); }
+
+/* ====== 月度详情（30 天 × 24 小时） ====== */
+.ds-md-detail {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding: 16px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  animation: dsMdSlide 0.2s ease-out;
+}
+@keyframes dsMdSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ds-md-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.ds-md-title {
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-normal);
-  font-size: 12px;
-  margin-bottom: 4px;
+  margin-bottom: 12px;
 }
-.ds-mstat-active {
-  font-size: 13px;
-  color: #30a14e;
-  font-weight: 600;
-  margin-bottom: 2px;
+.ds-md-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-.ds-mstat-focus {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 2px;
+.ds-md-header-row { margin-bottom: 4px; }
+.ds-md-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
 }
-.ds-mstat-events {
+.ds-md-date {
+  width: 28px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 6px;
   font-size: 10px;
-  color: var(--text-faint, var(--text-muted));
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
+.ds-md-cells {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+}
+.ds-md-hour-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: center;
+  font-family: var(--font-monospace);
+  min-width: 0;
+}
+.ds-md-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: #ebedf0;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  display: block;
+  text-decoration: none;
+  border: 1px solid rgba(0,0,0,0.04);
+  height: 14px;
+}
+.ds-md-cell:hover {
+  transform: scale(1.8);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  z-index: 10;
+  position: relative;
+  border-color: rgba(0,0,0,0.2);
 }
 </style>
 
@@ -922,12 +1013,13 @@ const html = `
   <div class="ds-months">${monthBlocks}</div>
   <div class="ds-legend">
     <span>活跃度：</span>
-    <span class="ds-legend-cell" style="background:#ebedf0"></span> 无
-    <span class="ds-legend-cell" style="background:#9be9a8"></span> 1-2h
-    <span class="ds-legend-cell" style="background:#40c463"></span> 2-5h
-    <span class="ds-legend-cell" style="background:#30a14e"></span> 5-10h
-    <span class="ds-legend-cell" style="background:#216e39"></span> 10h+
-    <span style="margin-left:auto;">💡 悬停查看详情 · 点击跳转到日报</span>
+    <span class="ds-legend-cell" style="background:#ebedf0"></span> 无数据
+    <span class="ds-legend-cell" style="background:#c5d4f0"></span> 有数据（挂机）
+    <span class="ds-legend-cell" style="background:#9be9a8"></span> &lt;1h
+    <span class="ds-legend-cell" style="background:#40c463"></span> 1-3h
+    <span class="ds-legend-cell" style="background:#30a14e"></span> 3-6h
+    <span class="ds-legend-cell" style="background:#216e39"></span> 6h+
+    <span style="margin-left:auto;">💡 悬停查看详情 · 点击格子跳转日报 · 点击月份展开 30 天 × 24h 热力图</span>
   </div>
   <div class="ds-mstats">${monthStatsHtml}</div>
 </div>
@@ -935,7 +1027,6 @@ const html = `
 
 dv.container.innerHTML = html;
 ```'''
-
         js_code = js_template
         js_code = js_code.replace("__DAYS__", days_json)
         js_code = js_code.replace("__MONTHS__", months_json)
@@ -973,7 +1064,8 @@ dv.container.innerHTML = html;
             log.warning("读 hourly_results.json 失败: %s", e)
             return {}
 
-        daily = {}
+        # 第一遍：收集所有有数据的 (date, hour) 组合
+        day_hour = {}  # {date_str: {hour: activity}}
         year_str = str(year)
         for key, result in all_results.items():
             if "_" not in key:
@@ -998,18 +1090,35 @@ dv.container.innerHTML = html;
             idle_ratio = idle / len(events)
             activity = 1 - idle_ratio
 
-            if date_str not in daily:
-                daily[date_str] = {
-                    "active_hours": 0,
-                    "total_hours": 0,
-                    "focus_sum": 0.0,
-                    "total_events": 0,
-                }
-            if activity > 0.1:
-                daily[date_str]["active_hours"] += 1
-            daily[date_str]["total_hours"] += 1
-            daily[date_str]["focus_sum"] += activity
-            daily[date_str]["total_events"] += len(events)
+            if date_str not in day_hour:
+                day_hour[date_str] = {}
+            day_hour[date_str][hour] = {
+                "activity": activity,
+                "events": len(events),
+            }
+
+        # 第二遍：按天聚合
+        daily = {}
+        for date_str, hours in day_hour.items():
+            hourly = [0.0] * 24
+            active_hours = 0
+            total_events = 0
+            focus_sum = 0.0
+            for h in range(24):
+                h_data = hours.get(h)
+                if h_data:
+                    hourly[h] = round(h_data["activity"], 2)
+                    total_events += h_data["events"]
+                    focus_sum += h_data["activity"]
+                    if h_data["activity"] > 0.1:
+                        active_hours += 1
+            daily[date_str] = {
+                "active_hours": active_hours,
+                "total_hours": len(hours),
+                "focus_sum": focus_sum,
+                "total_events": total_events,
+                "hourly": hourly,  # 24 小时活跃度（用于月度展开）
+            }
 
         # 算日均 focus
         for d in daily.values():
