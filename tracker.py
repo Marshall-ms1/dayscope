@@ -195,6 +195,16 @@ class Tracker:
         results = load_state("hourly_results")
         results[key] = result
         save_state("hourly_results", results)
+
+        # 刷新日报甘特图（不动 AI 总结部分）
+        try:
+            self.log.info("→ 准备刷新日报甘特图")
+            out = self.reporter.update_daily_gantt(target_date, results)
+            self.log.info("→ 甘特图已刷新: %s", out)
+        except Exception as e:
+            import traceback
+            self.log.error("刷新日报甘特图失败: %s\n%s", e, traceback.format_exc())
+
         self.log.info("✓ 完成 %s 分析 + 时报", key)
 
     def job_daily_report(self, now: datetime = None):
@@ -435,6 +445,8 @@ def main():
 
     if args.once_analyze:
         date_str, hour_str = args.once_analyze.split("/")
+        date = datetime.strptime(date_str, "%Y-%m-%d")
+        hour = int(hour_str)
         hour_dir = (Path(tracker.config["screenshot"]["output_dir"]).expanduser()
                     / date_str / hour_str)
         prompt = tracker.config["ai"]["prompt_hourly"]
@@ -444,8 +456,16 @@ def main():
         )
         if result:
             print(json.dumps(result, ensure_ascii=False, indent=2))
-            date = datetime.strptime(date_str, "%Y-%m-%d")
-            tracker.reporter.write_hourly(date, int(hour_str), result)
+            tracker.reporter.write_hourly(date, hour, result)
+            # 保存状态 + 刷新甘特图
+            key = f"{date_str}_{hour:02d}"
+            results = load_state("hourly_results")
+            results[key] = result
+            save_state("hourly_results", results)
+            try:
+                tracker.reporter.update_daily_gantt(date, results)
+            except Exception as e:
+                print(f"刷新甘特图失败: {e}")
         return
 
     tracker.start()
