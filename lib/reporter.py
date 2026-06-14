@@ -280,13 +280,13 @@ class Reporter:
                 start = t.get("start", "")
                 end = t.get("end", "")
                 cat = t.get("category", "碎片")
-                # 解析 start/end 到 hour（保留分钟，跨小时的任务用跨小时表示）
+                # 解析 start/end 到 minute（保留分钟）
                 def _parse_time(s: str) -> int:
                     if not s or ":" not in s:
                         return -1
                     try:
                         h, m = s.split(":")[:2]
-                        return int(h) * 60 + int(m)  # 转为分钟
+                        return int(h) * 60 + int(m)
                     except (ValueError, IndexError):
                         return -1
                 sh_min = _parse_time(start)
@@ -294,13 +294,14 @@ class Reporter:
                 if sh_min < 0:
                     sh_min = h_int * 60
                 if eh_min < 0 or eh_min < sh_min:
-                    eh_min = sh_min + 30  # 默认跨 30 分钟
+                    eh_min = sh_min + 30
+                duration_min = eh_min - sh_min
                 sh = sh_min // 60
                 eh = eh_min // 60
-                # 至少跨 1 小时显示（如果跨多小时肯定也跨）
+                # 跨 0 分钟也要跨 ≥ 1 小时
                 if eh == sh and eh_min - sh_min > 0:
-                    eh = sh + 1  # 跨多小时
-                # 主线判定：标题含 core_work 关键词 OR 在多个时报告出现 OR category 深度工作/调试
+                    eh = sh + 1
+                # 主线判定
                 is_main = False
                 if cat in ("深度工作", "调试", "文档"):
                     is_main = True
@@ -310,6 +311,9 @@ class Reporter:
                         break
                 all_tasks.append({
                     "sh": sh, "eh": max(eh, sh),
+                    "sh_min": sh_min,
+                    "eh_min": eh_min,
+                    "duration_min": duration_min,
                     "title": title,
                     "category": cat,
                     "is_main": is_main,
@@ -383,29 +387,34 @@ class Reporter:
         """
         import json
         # JS 字符串转义：避免引号、反引号、${ 破坏 JS 语法
+        def _to_task(t):
+            return {
+                "sh": t["sh"],
+                "eh": max(t["eh"], t["sh"] + 1),
+                "sh_min": t["sh_min"],
+                "eh_min": t["eh_min"],
+                "duration_min": t["duration_min"],
+                "title": t["title"],
+                "category": t["category"],
+                "hour": t["hour_key"],
+            }
+        # 按时段排序 + 按 category 统计
+        all_sorted = sorted(
+            [_to_task(t) for t in main_tasks] + [_to_task(t) for t in side_tasks],
+            key=lambda x: x["sh_min"]
+        )
+        cat_minutes = {}
+        for t in all_sorted:
+            cat_minutes[t["category"]] = cat_minutes.get(t["category"], 0) + max(t["duration_min"], 30)
         tasks_for_js = {
-            "main": [
-                {
-                    "sh": t["sh"], "eh": max(t["eh"], t["sh"] + 1),
-                    "title": t["title"],
-                    "category": t["category"],
-                    "hour": t["hour_key"],
-                }
-                for t in main_tasks
-            ],
-            "side": [
-                {
-                    "sh": t["sh"], "eh": max(t["eh"], t["sh"] + 1),
-                    "title": t["title"],
-                    "category": t["category"],
-                    "hour": t["hour_key"],
-                }
-                for t in side_tasks
-            ],
+            "all": all_sorted,
+            "main": [_to_task(t) for t in main_tasks],
+            "side": [_to_task(t) for t in side_tasks],
             "activity": [round(activity.get(h, 0), 2) for h in range(24)],
             "stats": {
                 "done": done_hours,
                 "productive": productive_hours,
+                "cat_minutes": cat_minutes,
             }
         }
         # JSON 序列化后去掉 中文 里常见的特殊字符（避免冲突）
@@ -413,193 +422,339 @@ class Reporter:
 
         # JS 代码块
         js_code = f'''```dataviewjs
-// ===== DayScope 甘特图（由 dayscope 程序自动生成）=====
-const DATA = {tasks_json};
-const MAIN = DATA.main;
-const SIDE = DATA.side;
-const ACT = DATA.activity;
+        ```dataviewjs
+        // ===== DayScope 甘特图 v2（更直观版本）=====
+        const DATA = {tasks_json};
+        const ALL = DATA.all;
+        const ACT = DATA.activity;
 
-function catColor(cat) {{
-  const map = {{
-    "深度工作": "#4a90e2",
-    "调试": "#7b68ee",
-    "文档": "#5cb85c",
-    "沟通": "#f5a623",
-    "学习": "#9b59b6",
-    "休息": "#95a5a6",
-    "挂机": "#7f8c8d",
-    "碎片": "#e67e22",
-  }};
-  return map[cat] || "#bdc3c7";
-}}
+        // ===== 工具函数 =====
+        function catColor(cat) {{
+          const map = {{
+            "深度工作": "#4a90e2",
+            "调试": "#7b68ee",
+            "文档": "#5cb85c",
+            "沟通": "#f5a623",
+            "学习": "#9b59b6",
+            "休息": "#95a5a6",
+            "挂机": "#7f8c8d",
+            "碎片": "#e67e22",
+          }};
+          return map[cat] || "#bdc3c7";
+        }}
+        function catEmoji(cat) {{
+          const map = {{
+            "深度工作": "🟦",
+            "调试": "🟪",
+            "文档": "🟩",
+            "沟通": "🟧",
+            "学习": "🟣",
+            "休息": "⬜",
+            "挂机": "⬛",
+            "碎片": "🟫",
+          }};
+          return map[cat] || "⬜";
+        }}
+        function fmtMin(m) {{
+          const h = Math.floor(m / 60);
+          const mm = m % 60;
+          if (h > 0 && mm > 0) return h + "h " + mm + "m";
+          if (h > 0) return h + "h";
+          return mm + "m";
+        }}
+        function fmtTime(m) {{
+          const h = Math.floor(m / 60);
+          const mm = m % 60;
+          return String(h).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+        }}
+        function timeOfDay(h) {{
+          if (h < 6)  return {{ key: "night",   label: "凌晨", icon: "🌙", bg: "rgba(48, 64, 96, 0.06)"  }};
+          if (h < 12) return {{ key: "morning", label: "上午", icon: "🌅", bg: "rgba(255, 183, 77, 0.06)" }};
+          if (h < 18) return {{ key: "afternoon", label: "下午", icon: "☀️", bg: "rgba(74, 144, 226, 0.05)" }};
+          return {{ key: "evening", label: "晚上", icon: "🌆", bg: "rgba(91, 44, 111, 0.06)" }};
+        }}
+        function darken(hex, ratio) {{
+          // 简单变暗（用于 bar 文字背景）
+          const n = parseInt(hex.slice(1), 16);
+          const r = Math.max(0, ((n >> 16) & 0xff) * (1 - ratio));
+          const g = Math.max(0, ((n >> 8)  & 0xff) * (1 - ratio));
+          const b = Math.max(0, (n & 0xff)         * (1 - ratio));
+          return "#" + [r, g, b].map(x => Math.round(x).toString(16).padStart(2, "0")).join("");
+        }}
 
-function renderGroup(tasks, label, emoji) {{
-  if (tasks.length === 0) return "";
-  const rows = tasks.map(t => {{
-    const left = (t.sh / 24 * 100);
-    const width = ((t.eh - t.sh + 1) / 24 * 100);
-    const color = catColor(t.category);
-    return `<div class="ds-row">
-  <div class="ds-time">${{String(t.hour).padStart(2,'0')}}:${{String(t.sh % 1 * 60 | 0).padStart(2,'0')}}</div>
-  <div class="ds-bar-track">
-    <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" title="${{t.title}} · ${{t.category}} · ${{t.sh}}-${{t.eh}}时"></div>
-  </div>
-  <div class="ds-title">${{t.title}}</div>
-  <div class="ds-cat" style="color:${{color}};">${{t.category}}</div>
-</div>`;
-  }}).join("");
-  return `<div class="ds-group">
-  <div class="ds-group-label">${{emoji}} ${{label}} <span class="ds-count">${{tasks.length}} 个</span></div>
-  ${{rows}}
-</div>`;
-}}
+        // ===== 时间锚点（6/12/18/24）=====
+        const majorHours = [0, 6, 12, 18, 24];
+        const majorMarkers = majorHours.map(h => {{
+          const left = (h / 24 * 100).toFixed(1);
+          return `<div class="ds-marker" style="left:${{left}}%"><span class="ds-marker-tick"></span><span class="ds-marker-label">${{String(h).padStart(2,"0")}}:00</span></div>`;
+        }}).join("");
 
-// 活跃度轴：24 个小方块
-const actBars = ACT.map((v, h) => {{
-  const cls = v === 0 ? "ds-act-none" : (v > 0.6 ? "ds-act-high" : (v > 0.3 ? "ds-act-mid" : "ds-act-low"));
-  return `<div class="${{cls}}" title="${{h}}时 · 活跃 ${{(v*100).toFixed(0)}}%"></div>`;
-}}).join("");
+        // ===== 活跃度热力条（24 小时，颜色 + 高度）=====
+        const actBars = ACT.map((v, h) => {{
+          if (v === 0) return `<div class="ds-act-cell ds-act-none" data-h="${{h}}"></div>`;
+          if (v < 0.3) return `<div class="ds-act-cell ds-act-low"  data-h="${{h}}" title="${{h}}时 活跃 ${{(v*100).toFixed(0)}}%"></div>`;
+          if (v < 0.6) return `<div class="ds-act-cell ds-act-mid"  data-h="${{h}}" title="${{h}}时 活跃 ${{(v*100).toFixed(0)}}%"></div>`;
+          return `<div class="ds-act-cell ds-act-high" data-h="${{h}}" title="${{h}}时 活跃 ${{(v*100).toFixed(0)}}%"></div>`;
+        }}).join("");
 
-const html = `
-<style>
-.ds-gantt {{
-  font-family: var(--font-interface);
-  font-size: 12px;
-  margin: 8px 0 16px 0;
-  padding: 12px;
-  background: var(--background-primary);
-  border-radius: 8px;
-  border: 1px solid var(--background-modifier-border);
-}}
-.ds-axis {{
-  display: flex;
-  align-items: center;
-  padding: 4px 0 8px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
-  margin-bottom: 8px;
-  color: var(--text-muted);
-  font-family: var(--font-monospace);
-}}
-.ds-axis-time {{ width: 56px; flex-shrink: 0; }}
-.ds-axis-bar {{ flex: 1; display: flex; justify-content: space-between; padding: 0 4px; }}
-.ds-act-row {{
-  display: flex;
-  align-items: center;
-  padding: 4px 0;
-  margin-bottom: 12px;
-  gap: 4px;
-}}
-.ds-act-label {{ width: 56px; flex-shrink: 0; color: var(--text-muted); font-size: 11px; }}
-.ds-act-track {{ flex: 1; display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }}
-.ds-act-track > div {{
-  height: 14px;
-  border-radius: 2px;
-  background: var(--background-secondary);
-  transition: all 0.2s;
-}}
-.ds-act-track > div:hover {{ transform: scaleY(1.3); }}
-.ds-act-none {{ background: var(--background-modifier-border) !important; opacity: 0.3; }}
-.ds-act-low {{ background: linear-gradient(90deg, #e67e22 0%, #f5a623 100%) !important; opacity: 0.5; }}
-.ds-act-mid {{ background: linear-gradient(90deg, #f5a623 0%, #f1c40f 100%) !important; opacity: 0.75; }}
-.ds-act-high {{ background: linear-gradient(90deg, #5cb85c 0%, #4a90e2 100%) !important; }}
-.ds-row {{
-  display: flex;
-  align-items: center;
-  height: 24px;
-  margin: 2px 0;
-  transition: background 0.15s;
-}}
-.ds-row:hover {{ background: var(--background-modifier-hover); border-radius: 4px; }}
-.ds-time {{ width: 56px; flex-shrink: 0; color: var(--text-muted); font-family: var(--font-monospace); font-size: 11px; padding-left: 4px; }}
-.ds-bar-track {{
-  flex: 1;
-  height: 14px;
-  background: var(--background-secondary);
-  border-radius: 3px;
-  position: relative;
-  margin: 0 8px;
-  overflow: hidden;
-}}
-.ds-bar {{
-  position: absolute;
-  height: 100%;
-  border-radius: 3px;
-  opacity: 0.85;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  transition: opacity 0.15s;
-  cursor: pointer;
-}}
-.ds-bar:hover {{ opacity: 1; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }}
-.ds-title {{
-  width: 220px;
-  flex-shrink: 0;
-  padding-left: 8px;
-  color: var(--text-normal);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
-}}
-.ds-cat {{
-  width: 80px;
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 500;
-}}
-.ds-group {{ margin-bottom: 16px; }}
-.ds-group-label {{
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 6px;
-  color: var(--text-normal);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}}
-.ds-count {{
-  font-size: 10px;
-  color: var(--text-muted);
-  background: var(--background-secondary);
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-weight: normal;
-}}
-.ds-stats {{
-  display: flex;
-  gap: 12px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--background-modifier-border);
-  font-size: 11px;
-  color: var(--text-muted);
-}}
-.ds-stats span {{ padding: 2px 8px; background: var(--background-secondary); border-radius: 4px; }}
-</style>
+        // ===== 任务按时间分组 =====
+        const groups = {{ morning: [], afternoon: [], evening: [], night: [] }};
+        ALL.forEach(t => {{
+          const tod = timeOfDay(t.sh);
+          groups[tod.key].push(t);
+        }});
 
-<div class="ds-gantt">
-  <div class="ds-axis">
-    <div class="ds-axis-time">活跃度</div>
-    <div class="ds-axis-bar">
-      <span>00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span>24</span>
-    </div>
-  </div>
-  <div class="ds-act-row">
-    <div class="ds-act-label">24h</div>
-    <div class="ds-act-track">${{actBars}}</div>
-  </div>
-  ${{renderGroup(MAIN, "主线任务", "🟦")}}
-  ${{renderGroup(SIDE, "支线/碎片", "🟨")}}
-  <div class="ds-stats">
-    <span>📶 时报覆盖 ${{DATA.stats.done}}/24h</span>
-    <span>⚡ 有效产出 ${{DATA.stats.productive}}h</span>
-    <span>🟦 ${{MAIN.length}} 主线</span>
-    <span>🟨 ${{SIDE.length}} 支线</span>
-  </div>
-</div>
-`;
+        function renderTask(t) {{
+          const left = (t.sh_min / (24 * 60) * 100);
+          const width = Math.max(2, (t.eh_min - t.sh_min) / (24 * 60) * 100);
+          const color = catColor(t.category);
+          const darkBg = darken(color, 0.35);
+          const longEnough = width > 6;  // bar 够宽才显示内文
+          const timeRange = fmtTime(t.sh_min) + " - " + fmtTime(t.eh_min);
+          return `<div class="ds-row" data-time="${{t.sh_min}}">
+          <div class="ds-time">${{fmtTime(t.sh_min)}}</div>
+          <div class="ds-bar-wrap">
+            <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" title="${{t.title}} · ${{timeRange}} · ${{fmtMin(t.duration_min)}}">
+              ${{longEnough ? `<span class="ds-bar-title">${{t.title}}</span>` : ""}}
+              ${{longEnough ? `<span class="ds-bar-dur" style="background:${{darkBg}};">${{fmtMin(t.duration_min)}}</span>` : `<span class="ds-bar-mini" style="background:${{darkBg}};">${{fmtMin(t.duration_min)}}</span>`}}
+            </div>
+          </div>
+          <div class="ds-cat-pill" style="background:${{color}};">${{catEmoji(t.category)}} ${{t.category}}</div>
+        </div>`;
+        }}
 
-dv.container.innerHTML = html;
-```'''
+        function renderGroup(key, label, icon) {{
+          const tasks = groups[key];
+          if (tasks.length === 0) return "";
+          const tod = timeOfDay(key === "morning" ? 8 : (key === "afternoon" ? 14 : (key === "evening" ? 20 : 3)));
+          const rows = tasks.map(renderTask).join("");
+          const totalMin = tasks.reduce((s, t) => s + t.duration_min, 0);
+          return `<div class="ds-group" style="background:${{tod.bg}};">
+          <div class="ds-group-label">${{icon}} ${{label}} <span class="ds-group-time">${{String(key === "night" ? 0 : (key === "morning" ? 6 : (key === "afternoon" ? 12 : 18))).padStart(2,"0")}}:00 - ${{String(key === "night" ? 6 : (key === "morning" ? 12 : (key === "afternoon" ? 18 : 24))).padStart(2,"0")}}:00</span> <span class="ds-count">${{tasks.length}} 个 · ${{fmtMin(totalMin)}}</span></div>
+          ${{rows}}
+        </div>`;
+        }}
+
+        // ===== 统计面板（按 category 拆解）=====
+        const catMin = DATA.stats.cat_minutes || {{}};
+        const totalCatMin = Object.values(catMin).reduce((s, m) => s + m, 0);
+        const catChips = Object.entries(catMin)
+          .sort((a, b) => b[1] - a[1])
+          .map(([cat, m]) => {{
+            const pct = totalCatMin > 0 ? ((m / totalCatMin) * 100).toFixed(0) : 0;
+            return `<div class="ds-cat-chip" style="--c:${{catColor(cat)}};"><span class="ds-cat-dot" style="background:${{catColor(cat)}}"></span><span class="ds-cat-name">${{cat}}</span><span class="ds-cat-time">${{fmtMin(m)}}</span><span class="ds-cat-pct">${{pct}}%</span></div>`;
+          }}).join("");
+
+        // 当前时间线（如果今天）
+        const now = new Date();
+        const isToday = Object.keys(DATA).length > 0;  // 简单判断
+        let nowMarker = "";
+        if (isToday) {{
+          const nowMin = now.getHours() * 60 + now.getMinutes();
+          if (nowMin > 0 && nowMin < 24 * 60) {{
+            const left = (nowMin / (24 * 60) * 100).toFixed(1);
+            nowMarker = `<div class="ds-now" style="left:${{left}}%;"><div class="ds-now-line"></div><div class="ds-now-label">${{fmtTime(nowMin)}} 现在</div></div>`;
+          }}
+        }}
+
+        const html = `
+        <style>
+        .ds-gantt {{
+          font-family: var(--font-interface);
+          font-size: 12px;
+          margin: 8px 0 16px 0;
+          padding: 12px;
+          background: var(--background-primary);
+          border-radius: 10px;
+          border: 1px solid var(--background-modifier-border);
+        }}
+        .ds-header {{
+          display: flex; justify-content: space-between; align-items: center;
+          margin-bottom: 12px; padding-bottom: 8px;
+          border-bottom: 1px solid var(--background-modifier-border);
+        }}
+        .ds-title-main {{ font-size: 14px; font-weight: 600; }}
+        .ds-title-sub {{ font-size: 11px; color: var(--text-muted); margin-top: 2px; }}
+
+        /* ===== 时间锚点条 ===== */
+        .ds-timeline {{
+          position: relative;
+          margin: 8px 0 12px 0;
+          padding: 18px 0 6px 0;
+          border-bottom: 1px dashed var(--background-modifier-border);
+        }}
+        .ds-marker {{ position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }}
+        .ds-marker-tick {{ display: block; width: 1px; height: 4px; background: var(--text-muted); opacity: 0.6; }}
+        .ds-marker-label {{ font-family: var(--font-monospace); font-size: 10px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; }}
+
+        /* ===== 活跃度热力条 ===== */
+        .ds-act-label {{ font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; }}
+        .ds-act-row {{
+          position: relative;
+          display: grid;
+          grid-template-columns: repeat(24, 1fr);
+          gap: 3px;
+          margin: 4px 0 12px 0;
+        }}
+        .ds-act-cell {{
+          height: 18px;
+          border-radius: 3px;
+          background: var(--background-secondary);
+          transition: all 0.2s;
+        }}
+        .ds-act-cell:hover {{ transform: scaleY(1.3); z-index: 10; }}
+        .ds-act-none {{ background: var(--background-modifier-border) !important; opacity: 0.25; }}
+        .ds-act-low  {{ background: linear-gradient(90deg, #e67e22 0%, #f5a623 100%) !important; opacity: 0.55; }}
+        .ds-act-mid  {{ background: linear-gradient(90deg, #f5a623 0%, #f1c40f 100%) !important; opacity: 0.85; }}
+        .ds-act-high {{ background: linear-gradient(90deg, #5cb85c 0%, #4a90e2 100%) !important; opacity: 1; }}
+
+        /* ===== 当前时间标记 ===== */
+        .ds-now {{ position: absolute; top: 0; bottom: -8px; transform: translateX(-50%); z-index: 20; pointer-events: none; }}
+        .ds-now-line {{ width: 2px; height: 100%; background: #e74c3c; box-shadow: 0 0 6px rgba(231,76,60,0.6); margin: 0 auto; }}
+        .ds-now-label {{ position: absolute; top: -16px; left: 50%; transform: translateX(-50%); background: #e74c3c; color: white; font-size: 10px; padding: 1px 6px; border-radius: 3px; white-space: nowrap; font-weight: 600; }}
+
+        /* ===== 任务分组 ===== */
+        .ds-group {{ margin: 8px -8px 8px -8px; padding: 8px; border-radius: 6px; }}
+        .ds-group-label {{
+          display: flex; align-items: center; gap: 8px;
+          font-size: 12px; font-weight: 600;
+          padding: 0 4px 6px 4px;
+          color: var(--text-normal);
+        }}
+        .ds-group-time {{ font-size: 10px; color: var(--text-muted); font-weight: normal; font-family: var(--font-monospace); }}
+
+        /* ===== 任务行 ===== */
+        .ds-row {{
+          display: grid;
+          grid-template-columns: 56px 1fr 90px;
+          align-items: center;
+          height: 30px;
+          margin: 2px 0;
+          transition: background 0.15s;
+          border-radius: 4px;
+        }}
+        .ds-row:hover {{ background: rgba(255,255,255,0.04); }}
+        .ds-time {{
+          font-family: var(--font-monospace);
+          font-size: 11px;
+          color: var(--text-muted);
+          padding-left: 4px;
+        }}
+        .ds-bar-wrap {{
+          position: relative;
+          height: 26px;
+        }}
+        .ds-bar {{
+          position: absolute;
+          top: 0; height: 100%;
+          border-radius: 4px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          display: flex; align-items: center;
+          padding: 0 6px;
+          gap: 6px;
+          color: white;
+          overflow: hidden;
+          cursor: pointer;
+          transition: transform 0.15s, box-shadow 0.15s;
+        }}
+        .ds-bar:hover {{ transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 5; }}
+        .ds-bar-title {{
+          font-size: 11px; font-weight: 500;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          flex: 1; min-width: 0;
+        }}
+        .ds-bar-dur {{
+          font-size: 10px; font-weight: 600;
+          padding: 1px 6px; border-radius: 3px;
+          white-space: nowrap;
+          font-family: var(--font-monospace);
+        }}
+        .ds-bar-mini {{
+          position: absolute; top: -2px; right: 4px;
+          font-size: 9px; font-weight: 600;
+          padding: 1px 4px; border-radius: 2px;
+          white-space: nowrap;
+          font-family: var(--font-monospace);
+          color: white;
+        }}
+        .ds-cat-pill {{
+          font-size: 10px;
+          color: white;
+          padding: 2px 8px;
+          border-radius: 10px;
+          text-align: center;
+          font-weight: 500;
+          margin-left: 8px;
+          white-space: nowrap;
+        }}
+
+        /* ===== 统计面板 ===== */
+        .ds-stats {{
+          margin-top: 12px; padding-top: 10px;
+          border-top: 1px solid var(--background-modifier-border);
+        }}
+        .ds-stats-title {{ font-size: 11px; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; }}
+        .ds-cats {{ display: flex; flex-wrap: wrap; gap: 6px; }}
+        .ds-cat-chip {{
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 3px 8px;
+          background: var(--background-secondary);
+          border-radius: 12px;
+          font-size: 11px;
+        }}
+        .ds-cat-dot {{ width: 8px; height: 8px; border-radius: 50%; }}
+        .ds-cat-name {{ color: var(--text-normal); }}
+        .ds-cat-time {{ color: var(--text-muted); font-family: var(--font-monospace); }}
+        .ds-cat-pct {{ color: var(--text-muted); font-size: 10px; }}
+
+        .ds-meta {{
+          display: flex; gap: 12px; margin-top: 8px;
+          font-size: 11px; color: var(--text-muted);
+        }}
+        .ds-meta b {{ color: var(--text-normal); font-weight: 600; }}
+        </style>
+
+        <div class="ds-gantt">
+          <div class="ds-header">
+            <div>
+              <div class="ds-title-main">📊 今日进度</div>
+              <div class="ds-title-sub">${{ALL.length}} 个任务 · 覆盖 ${{DATA.stats.done}}/24 小时</div>
+            </div>
+          </div>
+
+          <!-- 时间锚点 -->
+          <div class="ds-timeline">
+            ${{majorMarkers}}
+          </div>
+
+          <!-- 活跃度热力条 -->
+          <div class="ds-act-label">活跃度（24h）</div>
+          <div class="ds-act-row" style="position:relative;">
+            ${{actBars}}
+            ${{nowMarker}}
+          </div>
+
+          <!-- 任务按时段分组 -->
+          ${{renderGroup("morning",   "上午", "🌅")}}
+          ${{renderGroup("afternoon", "下午", "☀️")}}
+          ${{renderGroup("evening",   "晚上", "🌆")}}
+          ${{renderGroup("night",     "凌晨", "🌙")}}
+
+          <!-- 统计面板 -->
+          <div class="ds-stats">
+            <div class="ds-stats-title">⏱️ 分类时间分布</div>
+            <div class="ds-cats">${{catChips}}</div>
+            <div class="ds-meta">
+              <span>⚡ 有效产出 <b>${{DATA.stats.productive}}h</b></span>
+              <span>🟦 主线 <b>${{DATA.main.length}}</b></span>
+              <span>🟨 支线 <b>${{DATA.side.length}}</b></span>
+            </div>
+          </div>
+        </div>
+        `;
+
+        dv.container.innerHTML = html;
+        ```'''
         return "## 今日进度（甘特图）\n\n" + js_code + "\n"
 
     def update_daily_gantt(self, date: datetime, hourly_results: dict, daily_result: dict = None):
