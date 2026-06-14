@@ -528,7 +528,6 @@ class Reporter:
           const left = (t.sh_min / (24 * 60) * 100);
           const width = Math.max(1.5, (t.eh_min - t.sh_min) / (24 * 60) * 100);
           const color = catColor(t.category);
-          const longEnough = width > 8;
           // title、tooltip 都在 Python 端预计算并 HTML 转义，JS 端只读不加工
           const titleHtml = t.title_html;
           const tooltipHtml = t.tooltip_html;
@@ -536,10 +535,9 @@ class Reporter:
           <div class="ds-time">${{fmtTime(t.sh_min)}}</div>
           <div class="ds-bar-wrap">
             <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" data-tooltip="${{tooltipHtml}}"></div>
+            <span class="ds-bar-title">${{titleHtml}}</span>
           </div>
-          <div class="ds-meta">
-            ${{longEnough ? `<span class="ds-bar-title">${{titleHtml}}</span>` : `<span class="ds-bar-title ds-bar-title-only">${{titleHtml}}</span>`}}
-          </div>
+          <div class="ds-cat-pill" style="background:${{color}};">${{t.category}}</div>
         </div>`;
         }}
 
@@ -648,7 +646,7 @@ class Reporter:
           display: grid;
           grid-template-columns: 56px 1fr auto;
           align-items: center;
-          height: 36px;
+          height: 30px;
           margin: 0;
           padding: 0;
           gap: 12px;
@@ -662,7 +660,7 @@ class Reporter:
         }}
         .ds-bar-wrap {{
           position: relative;
-          height: 36px;
+          height: 30px;
           /* 贯穿全行的背景轨道（细中轴线） */
           background: linear-gradient(to right,
             transparent 0,
@@ -671,38 +669,52 @@ class Reporter:
           background-size: 100% 1px;
           background-repeat: no-repeat;
           background-position: 0 50%;
+          display: flex; align-items: center;
+          overflow: visible;  /* 允许 hover 气泡出 wrap 边界 */
+          min-width: 0;
         }}
         .ds-bar {{
           position: absolute;
           top: 50%;
           transform: translateY(-50%);
-          height: 14px;        /* 细胶囊 */
-          border-radius: 7px;  /* 全圆角 */
+          height: 12px;        /* 细胶囊 */
+          border-radius: 6px;  /* 全圆角 */
           box-shadow: 0 1px 2px rgba(0,0,0,0.15);
           cursor: pointer;
           transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
-          min-width: 6px;
+          min-width: 4px;
         }}
         .ds-bar:hover {{
-          transform: translateY(-50%) scaleY(1.2);
+          transform: translateY(-50%) scaleY(1.25);
           filter: brightness(1.12);
           box-shadow: 0 3px 8px rgba(0,0,0,0.3);
           z-index: 5;
         }}
-        .ds-meta {{
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          min-width: 0;
-          padding-right: 4px;
-        }}
         .ds-bar-title {{
+          position: absolute;
+          left: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          margin-left: 0;
           font-size: 12px;
           color: var(--text-normal);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          max-width: 220px;
+          max-width: 100%;
+          padding-left: 0;
+          z-index: 1;
+          /* 标题固定在行起点（紧贴时间轴），不是条后面 */
+        }}
+        .ds-cat-pill {{
+          font-size: 10px;
+          color: white;
+          padding: 2px 8px;
+          border-radius: 4px;
+          text-align: center;
+          font-weight: 500;
+          white-space: nowrap;
+          line-height: 1.4;
         }}
         /* ===== 动态 hover 气泡（由 JS 插入到 body） ===== */
         .ds-tooltip-popup {{
