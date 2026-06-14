@@ -715,12 +715,25 @@ const YEAR = __YEAR__;
 
 // 全局跳转函数：使用 Obsidian app API 跳转到日报
 window.__openDaily = function(dateStr) {
-  const filePath = `${dateStr}/日报.md`;
+  const dateOnly = `${dateStr}/日报.md`;          // 例如: 2026-06-14/日报.md
+  const fullPath = `汇报/日报/${dateOnly}`;        // vault 内完整路径
   try {
     if (typeof app !== "undefined" && app.workspace) {
-      const file = app.vault.getAbstractFileByPath(filePath);
+      // 1) 尝试 vault 完整路径
+      let file = app.vault.getAbstractFileByPath(fullPath);
+      if (!file) {
+        // 2) 退而尝试 vault 根相对路径
+        file = app.vault.getAbstractFileByPath(dateOnly);
+      }
+      // 3) 最后扫 vault.getFiles() 找含 dateStr 的日报.md
+      if (!file) {
+        const all = app.vault.getFiles();
+        file = all.find(f =>
+          f.name === "日报.md" && f.path.includes("/" + dateStr + "/")
+        );
+      }
       if (file) {
-        app.workspace.openLinkText(filePath, "", false);
+        app.workspace.openLinkText(file.path, "", false);
         return;
       } else {
         new Notice(`📅 ${dateStr} 还没有日报（该日无数据）`, 3000);
@@ -731,7 +744,7 @@ window.__openDaily = function(dateStr) {
     console.error("DayScope openDaily error:", e);
   }
   // 降级：使用 obsidian:// 协议
-  window.location.href = `obsidian://open?path=${encodeURIComponent(filePath)}`;
+  window.location.href = `obsidian://open?path=${encodeURIComponent(fullPath)}`;
 };
 
 function dayColor(d) {
