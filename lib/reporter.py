@@ -588,6 +588,17 @@ class Reporter:
           background: var(--background-primary);
           border-radius: 10px;
           border: 1px solid var(--background-modifier-border);
+          width: 1600px;  /* 固定宽：24h×66px + 边距 ＋时间/类目列 */
+          max-width: none;  /* 盖掉主题默认 max-width */
+          min-width: 100%;
+          box-sizing: border-box;
+        }}
+        .ds-scroll-wrap {{
+          width: 100%;
+          overflow-x: auto;  /* 屏幕不够时左右滚动 */
+          overflow-y: visible;
+          margin: 0 -12px;
+          padding: 0 12px;
         }}
         .ds-header {{
           display: flex; justify-content: space-between; align-items: center;
@@ -647,7 +658,7 @@ class Reporter:
         /* ===== 任务行 ===== */
         .ds-row {{
           display: grid;
-          grid-template-columns: 56px 1fr 90px;
+          grid-template-columns: 64px 1fr 120px;
           align-items: center;
           height: 30px;
           margin: 2px 0;
