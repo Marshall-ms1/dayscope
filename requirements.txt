@@ -1,0 +1,9 @@
+# DayScope 依赖
+# 系统级依赖（需手动 apt install）：
+#   sudo apt install -y python3-venv python3-gi python3-dbus gir1.2-gtk-3.0
+#
+# Python 依赖（install.sh 自动装）：
+APScheduler>=3.11,<4
+Pillow>=10,<13
+PyYAML>=6,<7
+tzlocal>=5,<6

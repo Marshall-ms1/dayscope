@@ -1,0 +1,28 @@
+[Unit]
+Description=DayScope — Auto daily activity report from your screen (AI 分析 + 时报/日报)
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=@USER_HOME@/.dayscope
+Environment="PATH=@USER_HOME@/.dayscope/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=@USER_HOME@/.Xauthority"
+# Wayland 下需要这些环境变量
+Environment="XDG_SESSION_TYPE=wayland"
+Environment="WAYLAND_DISPLAY=wayland-0"
+# D-Bus session（截图扩展需要）
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/@USER_ID@/bus"
+ExecStart=@USER_HOME@/.dayscope/venv/bin/python @USER_HOME@/.dayscope/tracker.py
+Restart=always
+RestartSec=10
+StandardOutput=append:@USER_HOME@/.dayscope/logs/stdout.log
+StandardError=append:@USER_HOME@/.dayscope/logs/stderr.log
+
+# 资源限制（防止泄漏）
+MemoryMax=500M
+CPUQuota=50%
+
+[Install]
+WantedBy=default.target

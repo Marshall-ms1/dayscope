@@ -1,0 +1,8 @@
+{
+    "uuid": "dayscope-helper@local",
+    "name": "DayScope Helper",
+    "description": "Headless screenshot via DBus for background services (DayScope).",
+    "version": 1,
+    "shell-version": ["49"],
+    "session-modes": ["user", "unlock-dialog"]
+}

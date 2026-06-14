@@ -1,0 +1,35 @@
+# DayScope .gitignore
+# Excludes privacy / temporary data when pushing to GitHub
+
+# Privacy / temporary data (NEVER commit these)
+screenshots/
+logs/
+state/
+.keenon-state/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# OS / editor
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Rendered artifacts
+# The service.template is the source; the rendered .service is per-machine
+dayscope.service
+*.service
+
+# Tests / temp
+test_*.png
+test_*.jpg
+*.tmp
+*.bak
+*.bak.*

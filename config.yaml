@@ -1,0 +1,105 @@
+# DayScope 配置文件
+# 修改后需要重启服务：systemctl --user restart dayscope
+
+# ============ 截图配置 ============
+screenshot:
+  interval_minutes: 1          # 截图频率（分钟）
+  output_dir: ~/.dayscope/screenshots
+  jpeg_quality: 70             # JPEG 质量（1-95）
+  max_dimension: 1920          # 最长边缩放（像素，0=不缩放）
+  retention_days: 7            # 原始截图保留天数（0=永不清）
+  skip_unchanged: true         # 屏幕没变化时跳过截图（节省空间）
+  unchanged_threshold: 0.98    # 相似度阈值（1.0=完全相同）
+
+# ============ 隐私保护 ============
+privacy:
+  enabled: true
+  # 窗口标题包含这些关键词时跳过截图
+  blacklist:
+    - "1Password"
+    - "Bitwarden"
+    - "KeePass"
+    - "LastPass"
+    - "银行"
+    - "招商银行"
+    - "工商银行"
+    - "建设银行"
+    - "支付宝"
+    - "微信支付"
+    - "Telegram"
+    - "Signal"
+    - "登录"
+    - "Sign in"
+
+# ============ AI 分析配置 ============
+ai:
+  enabled: true
+  model: "MiniMax-VL-01"        # minimax vision 模型
+  hourly_run_at_minute: 50     # 每小时第几分钟跑分析（如 50 = HH:50）
+  daily_run_at: "23:55"         # 每天几点几分生成日报
+  max_images_per_call: 18      # 单次调用最多图数（describe-many 上限 20）
+  timeout_seconds: 300          # 单次 AI 调用超时
+  # 时报分析 prompt（支持变量：{date} {hour} {count} {prev_summary}）
+  # 注意：openclaw 的 describe-many 是每张图独立分析，所以这个 prompt 是
+  # 给单张图设计的，要求输出最简化的 JSON，客户端再合并。
+  prompt_hourly: |
+    你是高级算法主管的工作分析师。这是他某一时刻（间隔约 2 分钟）的工作屏幕截图。
+
+    请精确识别：
+    1. **当前应用**：编辑器（VS Code/JetBrains/Vim）/ 终端 / 浏览器 / 聊天工具（Slack/微信/钉钉）/ 会议（Zoom/腾讯会议）/ 其他
+    2. **具体活动**：在写代码？读文档？调试？回消息？看日志？开会？浏览网页？
+    3. **关键内容**：代码语言/文件名/函数名、文档标题、聊天对象、网页主题
+
+    上一小时上下文：{prev_summary}
+
+    ⚠️ 必须**仅输出 JSON**，不要任何解释文字、Markdown 代码块标记、引号包裹：
+    {"app":"应用名","category":"深度工作|调试|文档|沟通|会议|学习|碎片","activity":"一句话具体活动","details":"关键内容（语言/文件名/话题/对象，30字内）"}
+
+  # 日报汇总 prompt
+  prompt_daily: |
+    你是高级算法主管的工作日报分析师。下面是他在 {date} 这一天的时报告汇总。
+
+    ⚠️ **重要约束**（务必遵守）：
+    1. 时报告数据可能稀疏（0~24 个不等），**只汇总有时报告的时段**，无数据的时段（00:00-23:00 中没列出的）一律不写、不推断、不脑补
+    2. 如果全天只有 1-2 个时段有数据，headline 直接说"数据稀疏（仅 N 个时段）"，不要硬凑 24 小时的总结
+    3. 时间分配百分比按"有数据的时段"重新归一化（不要硬凑成 100%）
+    4. **绝对不要**为缺失时段编造活动、产出、专注度
+
+    请生成一份**有深度、有洞察**的工作日报，包括：
+
+    1. **今日核心**：3-5 句话总结今天最重要的几件事
+    2. **时间分配**：深度工作、沟通、会议、碎片等各占多少百分比
+    3. **工具使用**：主要应用 Top 5 + 占比
+    4. **关键产出**：今天写了什么代码、看了什么文档、解决了什么问题
+    5. **效率分析**：专注度趋势、碎片程度、心流时间
+    6. **明日建议**：基于今天的模式给出 2-3 条可执行建议
+
+    时报数据：{hourly_summaries}
+
+    输出**严格 JSON**：
+    {{
+      "headline": "今日一句话（20字内，要犀利有判断）",
+      "core_work": ["核心事项 1", "核心事项 2", "核心事项 3"],
+      "time_distribution": {{"深度工作": 40, "沟通协作": 20, "会议": 10, "碎片浏览": 15, "学习": 10, "其他": 5}},
+      "top_apps": [["VS Code", 60], ["Chrome", 20], ["Slack", 10]],
+      "key_outputs": ["产出 1", "产出 2"],
+      "focus_score": 0.0,
+      "productivity_score": 0.0,
+      "highlights": ["高光时刻 1", "高光时刻 2"],
+      "lowlights": ["低效时段 1", "低效时段 2"],
+      "tomorrow_suggestions": ["建议 1", "建议 2"]
+    }}
+
+# ============ 报告输出 ============
+reports:
+  output_dir: "~/WorkSpace/Document/汇报/日报"
+  date_folder_format: "%Y-%m-%d"
+  hourly_filename: "时报-{hour:02d}.md"
+  daily_filename: "日报.md"
+
+# ============ 日志 ============
+logging:
+  level: INFO
+  file: ~/.dayscope/logs/tracker.log
+  max_bytes: 10485760     # 10MB
+  backup_count: 5
