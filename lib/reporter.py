@@ -35,6 +35,10 @@ class Reporter:
         insights = result.get("insights", [])
 
         lines = [
+            "---",
+            "cssclasses: ds-read-mode",
+            "---",
+            "",
             f"# 时报 · {date.strftime('%Y-%m-%d')} {hour:02d}:00 - {hour:02d}:59",
             "",
             f"> ## {summary}",
@@ -128,6 +132,10 @@ class Reporter:
         tomorrow = daily_result.get("tomorrow_suggestions", [])
 
         lines = [
+            "---",
+            "cssclasses: ds-read-mode",
+            "---",
+            "",
             f"# 日报 · {date.strftime('%Y-%m-%d')}",
             "",
             f"> ## {headline}",
@@ -1074,6 +1082,9 @@ dv.container.innerHTML = html;
         total_active = sum(m["active"] for m in months)
         total_days = sum(1 for d in days if d["events"] > 0)
         header = (
+            "---\n"
+            "cssclasses: ds-read-mode\n"
+            "---\n\n"
             f"# 📅 DayScope 日历看板 · {year}\n\n"
             f"> 自动统计每日活跃度 · 点击单元格查看日报详情\n\n"
             f"{js_code}\n\n"
