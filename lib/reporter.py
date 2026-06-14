@@ -36,7 +36,7 @@ class Reporter:
 
         lines = [
             "---",
-            "cssclasses: ds-read-mode",
+            "obsidianUIMode: preview",
             "---",
             "",
             f"# 时报 · {date.strftime('%Y-%m-%d')} {hour:02d}:00 - {hour:02d}:59",
@@ -133,7 +133,7 @@ class Reporter:
 
         lines = [
             "---",
-            "cssclasses: ds-read-mode",
+            "obsidianUIMode: preview",
             "---",
             "",
             f"# 日报 · {date.strftime('%Y-%m-%d')}",
@@ -1083,7 +1083,7 @@ dv.container.innerHTML = html;
         total_days = sum(1 for d in days if d["events"] > 0)
         header = (
             "---\n"
-            "cssclasses: ds-read-mode\n"
+            "obsidianUIMode: preview\n"
             "---\n\n"
             f"# 📅 DayScope 日历看板 · {year}\n\n"
             f"> 自动统计每日活跃度 · 点击单元格查看日报详情\n\n"
