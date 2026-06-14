@@ -641,15 +641,20 @@ class Reporter:
         }}
         .ds-group-time {{ font-size: 10px; color: var(--text-muted); font-weight: normal; font-family: var(--font-monospace); }}
 
-        /* ===== 任务行（细胶囊 + 背景轨道） ===== */
+        /* ===== 任务行（4列固定：time | 24h轴 | title | cat-pill） ===== */
+        /* col 1: 56px 时间戳 */
+        /* col 2: 1fr  24h 任务条（带背景轨道）不挤压 */
+        /* col 3: 1fr  任务名（左对齐） */
+        /* col 4: auto 分类标签 */
+        /* col 3 + col 4 总宽 ~320px 固定，col 2 可以撑满剩余 */
         .ds-row {{
           display: grid;
-          grid-template-columns: 56px 1fr minmax(120px, 1fr) auto;
+          grid-template-columns: 56px 1fr 240px 80px;
           align-items: center;
-          height: 30px;
+          height: 32px;
           margin: 0;
           padding: 0;
-          gap: 12px;
+          gap: 10px;
         }}
         .ds-row:hover {{ background: rgba(255,255,255,0.02); }}
         .ds-time {{
@@ -660,16 +665,15 @@ class Reporter:
         }}
         .ds-bar-wrap {{
           position: relative;
-          height: 30px;
-          /* 贯穿全行的背景轨道（细中轴线） */
-          background: linear-gradient(to right,
+          height: 32px;
+          /* 贯穿全行的背景轨道（14px 高的浅色带状区域，不是1px细线） */
+          background: linear-gradient(to bottom,
             transparent 0,
-            rgba(255,255,255,0.06) 0,
-            rgba(255,255,255,0.06) 100%);
-          background-size: 100% 1px;
-          background-repeat: no-repeat;
-          background-position: 0 50%;
-          display: flex; align-items: center;
+            transparent 9px,
+            rgba(255,255,255,0.06) 9px,
+            rgba(255,255,255,0.06) 23px,
+            transparent 23px,
+            transparent 32px);
           overflow: visible;  /* 允许 hover 气泡出 wrap 边界 */
           min-width: 0;
         }}
@@ -677,15 +681,15 @@ class Reporter:
           position: absolute;
           top: 50%;
           transform: translateY(-50%);
-          height: 12px;        /* 细胶囊 */
-          border-radius: 6px;  /* 全圆角 */
+          height: 18px;       /* 粗一点的胶囊 */
+          border-radius: 9px; /* 全圆角 */
           box-shadow: 0 1px 2px rgba(0,0,0,0.15);
           cursor: pointer;
           transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
           min-width: 4px;
         }}
         .ds-bar:hover {{
-          transform: translateY(-50%) scaleY(1.25);
+          transform: translateY(-50%) scaleY(1.15);
           filter: brightness(1.12);
           box-shadow: 0 3px 8px rgba(0,0,0,0.3);
           z-index: 5;
@@ -696,17 +700,20 @@ class Reporter:
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          min-width: 0;
+          text-align: left;
+          width: 100%;
+          /* 任务名固定列内左对齐，靠省略号防溢出 */
         }}
         .ds-cat-pill {{
           font-size: 10px;
           color: white;
-          padding: 2px 8px;
+          padding: 3px 8px;
           border-radius: 4px;
           text-align: center;
           font-weight: 500;
           white-space: nowrap;
-          line-height: 1.4;
+          line-height: 1.3;
+          width: 100%;
         }}
         /* ===== 动态 hover 气泡（由 JS 插入到 body） ===== */
         .ds-tooltip-popup {{
