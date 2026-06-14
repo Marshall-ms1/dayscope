@@ -586,7 +586,7 @@ class Reporter:
           background: var(--background-primary);
           border-radius: 10px;
           border: 1px solid var(--background-modifier-border);
-          overflow-x: auto;  /* 横向滚动 */
+          overflow-x: auto;
           overflow-y: hidden;
         }}
         .ds-gantt-inner {{
@@ -594,10 +594,7 @@ class Reporter:
           max-width: none;
           box-sizing: border-box;
           padding: 12px;
-        }}
-        .ds-h-scroll {{
-          width: 100%;
-          overflow: visible;
+          position: relative;
         }}
         .ds-header {{
           display: flex; justify-content: space-between; align-items: center;
@@ -789,14 +786,13 @@ class Reporter:
         </style>
 
         <div class="ds-gantt">
-          <div class="ds-header ds-sticky-top">
+          <div class="ds-header">
             <div>
               <div class="ds-title-main">📊 今日进度</div>
               <div class="ds-title-sub">${{ALL.length}} 个任务 · 覆盖 ${{DATA.stats.done}}/24 小时</div>
             </div>
           </div>
-          <div class="ds-h-scroll">  <!-- overflow-x: auto，实际滚动 -->
-            <div class="ds-gantt-inner">
+          <div class="ds-gantt-inner">
           <!-- 时间锚点 -->
           <div class="ds-timeline">
             ${{majorMarkers}}
@@ -814,8 +810,7 @@ class Reporter:
           ${{renderGroup("afternoon", "下午", "☀️")}}
           ${{renderGroup("evening",   "晚上", "🌆")}}
           ${{renderGroup("night",     "凌晨", "🌙")}}
-            </div>  <!-- /ds-gantt-inner -->
-          </div>  <!-- /ds-h-scroll -->
+          </div>  <!-- /ds-gantt-inner -->
           <!-- 统计面板：放到滚动容器外 -->
           <div class="ds-stats">
             <div class="ds-stats-title">⏱️ 分类时间分布</div>
@@ -849,61 +844,68 @@ class Reporter:
           }}
         }});
 
-        // === 手动实现 sticky（避开 CSS sticky 被 overflow 破坏的问题） ===
-        // 纵向上：.ds-group-label 钉在 viewport 顶部（当 scroll 上滚出 .ds-gantt 顶部时）
-        // 横向上：.ds-time 钉在 .ds-gantt 左边
+        // === 手动实现 sticky：避免 CSS sticky 被 overflow-x: auto 破坏 ===
         const ganttEl2 = dv.container.querySelector('.ds-gantt');
-        const hScrollEl = dv.container.querySelector('.ds-h-scroll');
-        if (ganttEl2 && hScrollEl && !ganttEl2.__dsStickyBound) {{
+        if (ganttEl2 && !ganttEl2.__dsStickyBound) {{
           ganttEl2.__dsStickyBound = true;
           let raf = 0;
+          // 准备 pinned label 克隆元素（重用同一个）
+          let clone = null;
+          const ensureClone = () => {{
+            if (!clone) {{
+              clone = document.createElement('div');
+              clone.className = 'ds-group-label ds-group-label-clone';
+              clone.style.position = 'fixed';
+              clone.style.zIndex = '999';
+              clone.style.display = 'none';
+              clone.style.background = 'var(--background-primary)';
+              clone.style.boxShadow = '0 2px 4px rgba(0,0,0,0.15)';
+              document.body.appendChild(clone);
+            }}
+            return clone;
+          }};
           const update = () => {{
             raf = 0;
-            // 纵向：ds-group-label 钉到 .ds-h-scroll 顶
             const labels = ganttEl2.querySelectorAll('.ds-group-label');
-            const hRect = hScrollEl.getBoundingClientRect();
+            const gRect = ganttEl2.getBoundingClientRect();
+            // 找到 .ds-gantt-inner 的上边
+            const inner = ganttEl2.querySelector('.ds-gantt-inner');
+            const innerTop = inner ? inner.getBoundingClientRect().top : gRect.top;
+            // 找出最“应被钉住”的 label
             let pinned = null;
             labels.forEach(label => {{
               const r = label.getBoundingClientRect();
-              if (r.top < hRect.top + 2) {{
+              if (r.top < innerTop) {{
                 if (!pinned || r.top > pinned.getBoundingClientRect().top) {{
                   pinned = label;
                 }}
               }}
             }});
-            // 临时“克隆” pinned label 到 fixed 位置
-            let clone = ganttEl2.__dsClone;
+            const c = ensureClone();
             if (pinned) {{
-              const rect = pinned.getBoundingClientRect();
-              if (!clone) {{
-                clone = pinned.cloneNode(true);
-                clone.style.position = 'fixed';
-                clone.style.left = rect.left + 'px';
-                clone.style.top = hRect.top + 'px';
-                clone.style.width = rect.width + 'px';
-                clone.style.zIndex = '100';
-                clone.style.background = 'var(--background-primary)';
-                clone.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                document.body.appendChild(clone);
-                ganttEl2.__dsClone = clone;
-              }} else {{
-                clone.innerHTML = pinned.innerHTML;
-                clone.style.left = rect.left + 'px';
-                clone.style.top = hRect.top + 'px';
-                clone.style.width = rect.width + 'px';
-                clone.style.display = 'block';
-              }}
-            }} else if (clone) {{
-              clone.style.display = 'none';
+              const r = pinned.getBoundingClientRect();
+              c.innerHTML = pinned.innerHTML;
+              c.style.left = r.left + 'px';
+              c.style.top = innerTop + 'px';
+              c.style.width = r.width + 'px';
+              c.style.display = 'flex';
+            }} else {{
+              c.style.display = 'none';
             }}
           }};
           const onScroll = () => {{
             if (raf) return;
             raf = requestAnimationFrame(update);
           }};
+          // 监听所有可能引起滚动的容器
           window.addEventListener('scroll', onScroll, {{ passive: true }});
-          hScrollEl.addEventListener('scroll', onScroll, {{ passive: true }});
-          update();
+          ganttEl2.addEventListener('scroll', onScroll, {{ passive: true }});
+          // 也监听 resize
+          window.addEventListener('resize', onScroll, {{ passive: true }});
+          // 初始计算
+          requestAnimationFrame(update);
+          // 定期重算（防止有内容异步加载）
+          setInterval(update, 500);
         }}
 
         // === 动态 hover 气泡（不依赖 CSS ::after，避免被裁切） ===
