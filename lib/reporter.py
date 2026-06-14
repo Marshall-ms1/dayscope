@@ -583,18 +583,11 @@ class Reporter:
         .ds-gantt {{
           font-family: var(--font-interface);
           font-size: 12px;
+          margin: 8px 0 16px 0;
+          padding: 12px;
           background: var(--background-primary);
           border-radius: 10px;
           border: 1px solid var(--background-modifier-border);
-          overflow-x: auto;
-          overflow-y: hidden;
-        }}
-        .ds-gantt-inner {{
-          width: 1600px;
-          max-width: none;
-          box-sizing: border-box;
-          padding: 12px;
-          position: relative;
         }}
         .ds-header {{
           display: flex; justify-content: space-between; align-items: center;
@@ -607,20 +600,10 @@ class Reporter:
         /* ===== 时间锚点条 ===== */
         .ds-timeline {{
           position: relative;
-          margin: 0;  /* 上下边距交给外层 wrap */
+          margin: 8px 0 12px 0;
           padding: 18px 0 6px 0;
           border-bottom: 1px dashed var(--background-modifier-border);
-          height: 100%;
         }}
-        .ds-timeline-wrap {{
-          display: grid;
-          grid-template-columns: 64px 1fr 120px;
-          align-items: stretch;
-          margin: 8px 0 12px 0;
-        }}
-        .ds-timeline-wrap > .ds-timeline {{ grid-column: 2; }}
-        .ds-timeline-wrap > .ds-time,
-        .ds-timeline-wrap > .ds-cat-pill {{ visibility: hidden; }}
         .ds-marker {{ position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }}
         .ds-marker-tick {{ display: block; width: 1px; height: 4px; background: var(--text-muted); opacity: 0.6; }}
         .ds-marker-label {{ font-family: var(--font-monospace); font-size: 10px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; }}
@@ -632,18 +615,8 @@ class Reporter:
           display: grid;
           grid-template-columns: repeat(24, 1fr);
           gap: 3px;
-          margin: 0;  /* 上下边距交给外层 wrap */
-          height: 100%;
-        }}
-        .ds-act-wrap {{
-          display: grid;
-          grid-template-columns: 64px 1fr 120px;
-          align-items: stretch;
           margin: 4px 0 12px 0;
         }}
-        .ds-act-wrap > .ds-act-row {{ grid-column: 2; }}
-        .ds-act-wrap > .ds-time,
-        .ds-act-wrap > .ds-cat-pill {{ visibility: hidden; }}
         .ds-act-cell {{
           height: 18px;
           border-radius: 3px;
@@ -668,19 +641,13 @@ class Reporter:
           font-size: 12px; font-weight: 600;
           padding: 0 4px 6px 4px;
           color: var(--text-normal);
-          /* sticky 顶部：纵向滚动时钉住 */
-          position: sticky;
-          top: 0;
-          z-index: 5;
-          background: var(--background-primary);
-          border-bottom: 1px solid var(--background-modifier-border);
         }}
         .ds-group-time {{ font-size: 10px; color: var(--text-muted); font-weight: normal; font-family: var(--font-monospace); }}
 
         /* ===== 任务行 ===== */
         .ds-row {{
           display: grid;
-          grid-template-columns: 64px 1fr 120px;
+          grid-template-columns: 56px 1fr 90px;
           align-items: center;
           height: 30px;
           margin: 2px 0;
@@ -693,12 +660,6 @@ class Reporter:
           font-size: 11px;
           color: var(--text-muted);
           padding-left: 4px;
-          /* sticky 左侧：横向滚动时钉住 */
-          position: sticky;
-          left: 0;
-          z-index: 4;
-          background: var(--background-primary);
-          border-right: 1px solid var(--background-modifier-border);
         }}
         .ds-bar-wrap {{
           position: relative;
@@ -777,10 +738,6 @@ class Reporter:
           font-weight: 500;
           margin-left: 8px;
           white-space: nowrap;
-          /* sticky 右：横向滚动时钉在右 */
-          position: sticky;
-          right: 0;
-          z-index: 3;
         }}
 
         /* ===== 统计面板 ===== */
@@ -816,25 +773,17 @@ class Reporter:
               <div class="ds-title-sub">${{ALL.length}} 个任务 · 覆盖 ${{DATA.stats.done}}/24 小时</div>
             </div>
           </div>
-          <div class="ds-gantt-inner">
-          <!-- 时间锚点：3列网格中 1fr 中画与任务条对齐 -->
-          <div class="ds-timeline-wrap">
-            <div class="ds-time">--</div>
-            <div class="ds-timeline">
-              ${{majorMarkers}}
-            </div>
-            <div class="ds-cat-pill">--</div>
+
+          <!-- 时间锚点 -->
+          <div class="ds-timeline">
+            ${{majorMarkers}}
           </div>
 
           <!-- 活跃度热力条 -->
           <div class="ds-act-label">活跃度（24h）</div>
-          <div class="ds-act-wrap">
-            <div class="ds-time">--</div>
-            <div class="ds-act-row" style="position:relative;">
-              ${{actBars}}
-              ${{nowMarker}}
-            </div>
-            <div class="ds-cat-pill">--</div>
+          <div class="ds-act-row" style="position:relative;">
+            ${{actBars}}
+            ${{nowMarker}}
           </div>
 
           <!-- 任务按时段分组 -->
@@ -842,8 +791,8 @@ class Reporter:
           ${{renderGroup("afternoon", "下午", "☀️")}}
           ${{renderGroup("evening",   "晚上", "🌆")}}
           ${{renderGroup("night",     "凌晨", "🌙")}}
-          </div>  <!-- /ds-gantt-inner -->
-          <!-- 统计面板：放到滚动容器外 -->
+
+          <!-- 统计面板 -->
           <div class="ds-stats">
             <div class="ds-stats-title">⏱️ 分类时间分布</div>
             <div class="ds-cats">${{catChips}}</div>
@@ -857,88 +806,6 @@ class Reporter:
         `;
 
         dv.container.innerHTML = html;
-
-        // === 初始滚动：定位到 9 点处 ===
-        // 在 .ds-gantt-inner 里，24h 占总宽 1600px - 边距 24px - 64px(时间列) - 120px(分类列) = ~1392px 可用
-        // 9 点 = 9/24 比例 = 0.375
-        // 页面加载后 scrollLeft = 9/24 * 1600 - 200 = 约 400
-        requestAnimationFrame(() => {{
-          const wrap = dv.container.querySelector('.ds-h-scroll');
-          if (wrap) {{
-            // 设定 9 点为初始可视位置
-            const inner = wrap.querySelector('.ds-gantt-inner');
-            if (inner) {{
-              const innerW = inner.scrollWidth;
-              // 9 点对齐在容器左边 60px 处（预留时间列宽）
-              const target = (9 / 24) * (innerW - 200) - 60;
-              wrap.scrollLeft = Math.max(0, target);
-            }}
-          }}
-        }});
-
-        // === 手动实现 sticky：避免 CSS sticky 被 overflow-x: auto 破坏 ===
-        // 纵向：哪全全时滚动，.ds-group-label 钉在 viewport 顶部
-        // 横向：.ds-cat-pill 已经是 CSS sticky (right: 0)
-        const ganttEl2 = dv.container.querySelector('.ds-gantt');
-        if (ganttEl2 && !ganttEl2.__dsStickyBound) {{
-          ganttEl2.__dsStickyBound = true;
-          let raf = 0;
-          let clone = null;
-          const ensureClone = () => {{
-            if (!clone) {{
-              clone = document.createElement('div');
-              clone.className = 'ds-group-label';
-              clone.style.position = 'fixed';
-              clone.style.zIndex = '999';
-              clone.style.display = 'none';
-              clone.style.background = 'var(--background-primary)';
-              clone.style.boxShadow = '0 2px 4px rgba(0,0,0,0.15)';
-              clone.style.borderRadius = '4px';
-              document.body.appendChild(clone);
-            }}
-            return clone;
-          }};
-          const update = () => {{
-            raf = 0;
-            const labels = ganttEl2.querySelectorAll('.ds-group-label');
-            // 找出“该被钉住”的 label
-            // 条件：该 label 原本应被钉在 .ds-gantt-inner top 位置（过 .gantt-inner 顶部后）
-            // 算法：对每个 label，如果其 r.top < innerTop 临界（已被滚过顶），取最靠下的那个
-            const inner = ganttEl2.querySelector('.ds-gantt-inner');
-            const innerTop = inner ? inner.getBoundingClientRect().top : 0;
-            let pinned = null;
-            labels.forEach(label => {{
-              const r = label.getBoundingClientRect();
-              // label 已被滚过 inner 顶（r.top < innerTop）
-              // 且 label 本身未滚出 viewport 顶部（r.bottom > 0）
-              if (r.top < innerTop && r.bottom > 0) {{
-                if (!pinned || r.top > pinned.getBoundingClientRect().top) {{
-                  pinned = label;  // 取最靠下（最近被滚过顶）
-                }}
-              }}
-            }});
-            const c = ensureClone();
-            if (pinned) {{
-              const r = pinned.getBoundingClientRect();
-              c.innerHTML = pinned.innerHTML;
-              c.style.left = r.left + 'px';
-              c.style.top = innerTop + 'px';
-              c.style.width = r.width + 'px';
-              c.style.display = 'flex';
-            }} else {{
-              c.style.display = 'none';
-            }}
-          }};
-          const onScroll = () => {{
-            if (raf) return;
-            raf = requestAnimationFrame(update);
-          }};
-          window.addEventListener('scroll', onScroll, {{ passive: true }});
-          ganttEl2.addEventListener('scroll', onScroll, {{ passive: true }});
-          window.addEventListener('resize', onScroll, {{ passive: true }});
-          requestAnimationFrame(update);
-          setInterval(update, 500);
-        }}
 
         // === 动态 hover 气泡（不依赖 CSS ::after，避免被裁切） ===
         // 事件代理：在 .ds-gantt 根上监听 mouseover/mouseout
