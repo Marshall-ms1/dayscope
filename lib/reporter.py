@@ -756,6 +756,29 @@ class Reporter:
         ```'''
         return "## 今日进度（甘特图）\n\n" + js_code + "\n"
 
+    def _strip_code_fence_indent(self, js_code: str) -> str:
+        """去掉 js_code 末尾 ``` 闭合围栏的缩进
+
+        f-string 末尾必须是 ```'''（与外层代码缩进对齐），导致输出到
+        markdown 文件后闭合围栏带有 8 空格缩进，markdown 解析器不认。
+        此方法检测最后一行（应该是闭合围栏），去掉它的前导空格。
+        """
+        if not js_code:
+            return js_code
+        # 按 \n 拆开，看最后一行
+        parts = js_code.rsplit("\n", 2)
+        # parts[-1] = 末尾换行后的内容（可能为空）
+        # parts[-2] = 最后一行
+        if len(parts) >= 2 and parts[-2].strip() == "```":
+            # 重组：去掉最后一部分的换行 + 闭合围栏 + 末尾换行
+            # 用 parts[:-2] + ["]```"] 重组
+            head = "\n".join(parts[:-2])
+            if head:
+                return head + "\n```\n"
+            else:
+                return "```\n"
+        return js_code
+
     def update_daily_gantt(self, date: datetime, hourly_results: dict, daily_result: dict = None):
         """每小时更新日报的甘特图块（不动 AI 总结部分）
 
@@ -766,6 +789,7 @@ class Reporter:
         path = folder / self.daily_tpl
 
         gantt_block = self._build_gantt_block(date, hourly_results, daily_result)
+        gantt_block = self._strip_code_fence_indent(gantt_block)
 
         if not path.exists():
             # 创建占位日报（含头部 + 甘特图 + 提示）
