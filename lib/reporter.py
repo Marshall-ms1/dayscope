@@ -756,13 +756,16 @@ window.__openDaily = function(dateStr) {
 };
 
 function dayColor(d) {
-  // 6 档：有数据但全挂机（浅蓝）→ 活跃小时梯度（绿色）
+  // 9 档：2 档灰色（无数据 / 挂机）+ 7 档绿色梯度（<1h / 1-3h / 3-6h / 6-8h / 8-10h / 10-12h / 12h+）
   if (!d || d.events === 0) return "#ebedf0";
   if (d.active === 0)         return "#c5d4f0";
   if (d.active < 1)           return "#9be9a8";
   if (d.active < 3)           return "#40c463";
   if (d.active < 6)           return "#30a14e";
-  return "#216e39";
+  if (d.active < 8)           return "#216e39";
+  if (d.active < 10)          return "#1a5e32";
+  if (d.active < 12)          return "#15502b";
+  return "#0f4224";
 }
 function dayLabel(d) {
   if (!d || d.events === 0) return "无数据";
@@ -770,7 +773,10 @@ function dayLabel(d) {
   if (d.active < 1)           return "<1h 活跃";
   if (d.active < 3)           return "1-3h 活跃";
   if (d.active < 6)           return "3-6h 活跃";
-  return "6h+ 活跃";
+  if (d.active < 8)           return "6-8h 活跃";
+  if (d.active < 10)          return "8-10h 活跃";
+  if (d.active < 12)          return "10-12h 活跃";
+  return "12h+ 活跃";
 }
 function hourColor(act) {
   if (act === 0)  return "#ebedf0";
@@ -1062,7 +1068,10 @@ const html = `
     <span class="ds-legend-cell" style="background:#9be9a8"></span> &lt;1h
     <span class="ds-legend-cell" style="background:#40c463"></span> 1-3h
     <span class="ds-legend-cell" style="background:#30a14e"></span> 3-6h
-    <span class="ds-legend-cell" style="background:#216e39"></span> 6h+
+    <span class="ds-legend-cell" style="background:#216e39"></span> 6-8h
+    <span class="ds-legend-cell" style="background:#1a5e32"></span> 8-10h
+    <span class="ds-legend-cell" style="background:#15502b"></span> 10-12h
+    <span class="ds-legend-cell" style="background:#0f4224"></span> 12h+
     <span style="margin-left:auto;">💡 悬停查看详情 · 点击格子跳转日报 · 点击月份展开 30 天 × 24h 热力图</span>
   </div>
   <div class="ds-mstats">${monthStatsHtml}</div>
