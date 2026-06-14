@@ -388,13 +388,33 @@ class Reporter:
         import json
         # JS 字符串转义：避免引号、反引号、${ 破坏 JS 语法
         def _to_task(t):
+            # HTML 转义：避免 title 中的 " ' < > 在 HTML 属性里炸
+            import html as _html
+            title = t["title"] or ""
+            sh_min = t["sh_min"]
+            eh_min = t["eh_min"]
+            dur = t["duration_min"]
+            def _fmt(m):
+                h, mm = divmod(m, 60)
+                return f"{h:02d}:{mm:02d}"
+            time_range = f"{_fmt(sh_min)} - {_fmt(eh_min)}"
+            def _fmt_dur(m):
+                h, mm = divmod(max(m, 0), 60)
+                if h and mm:
+                    return f"{h}h {mm}m"
+                if h:
+                    return f"{h}h"
+                return f"{mm}m"
+            tooltip = f"{title} · {time_range} · {_fmt_dur(dur)}"
             return {
                 "sh": t["sh"],
                 "eh": max(t["eh"], t["sh"] + 1),
-                "sh_min": t["sh_min"],
-                "eh_min": t["eh_min"],
-                "duration_min": t["duration_min"],
-                "title": t["title"],
+                "sh_min": sh_min,
+                "eh_min": eh_min,
+                "duration_min": dur,
+                "title": title,
+                "title_html": _html.escape(title, quote=True),
+                "tooltip_html": _html.escape(tooltip, quote=True),
                 "category": t["category"],
                 "hour": t["hour_key"],
             }
@@ -508,14 +528,15 @@ class Reporter:
           const width = Math.max(2, (t.eh_min - t.sh_min) / (24 * 60) * 100);
           const color = catColor(t.category);
           const darkBg = darken(color, 0.4);
-          const longEnough = width > 12;  // 12% 以上才内嵌文字 + 时长标签
-          const timeRange = fmtTime(t.sh_min) + " - " + fmtTime(t.eh_min);
-          const tooltip = `${{t.title}} · ${{timeRange}} · ${{fmtMin(t.duration_min)}}`;
-          return `<div class="ds-row" data-time="${{t.sh_min}}" data-tooltip="${{tooltip}}">
+          const longEnough = width > 12;
+          // title、tooltip 都在 Python 端预计算并 HTML 转义，JS 端只读不加工
+          const titleHtml = t.title_html;
+          const tooltipHtml = t.tooltip_html;
+          return `<div class="ds-row" data-time="${{t.sh_min}}" data-tooltip="${{tooltipHtml}}">
           <div class="ds-time">${{fmtTime(t.sh_min)}}</div>
           <div class="ds-bar-wrap">
-            <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" data-tooltip="${{tooltip}}">
-              ${{longEnough ? `<span class="ds-bar-title">${{t.title}}</span>` : `<span class="ds-bar-mini-icon">${{catEmoji(t.category)}}</span>`}}
+            <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" data-tooltip="${{tooltipHtml}}">
+              ${{longEnough ? `<span class="ds-bar-title">${{titleHtml}}</span>` : `<span class="ds-bar-mini-icon">${{catEmoji(t.category)}}</span>`}}
               ${{longEnough ? `<span class="ds-bar-dur" style="background:${{darkBg}};">${{fmtMin(t.duration_min)}}</span>` : `<span class="ds-bar-mini-dur" style="background:${{darkBg}};">${{fmtMin(t.duration_min)}}</span>`}}
             </div>
           </div>
