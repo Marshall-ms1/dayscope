@@ -302,6 +302,76 @@ class Tracker:
 
         self.log.info("✓ 完成日报: %s", date_str)
 
+    def watchdog_check_missing(self, lookback_hours: int = 4) -> list:
+        """服务启动时检查最近 N 小时是否有缺失的时报告，自动补跑
+
+        场景：服务被 SIGTERM 杀掉重启后、OpenClaw state-migration 抹掉运行结果等。
+        原则：
+          - 跳过当前小时（除非已过 50 分）
+          - 跳过没有截图的小时
+          - 每个补跑间隔 3 秒，避免 OpenClaw rate limit 排队
+        """
+        from pathlib import Path as _Path
+        now = datetime.now()
+        state = load_state("analyzed_hours")
+
+        missing = []
+        for i in range(lookback_hours):
+            check_time = now - timedelta(hours=i)
+            # 当前小时且未过 50 分 → 跳过（不补跑进行中的小时）
+            if i == 0 and check_time.minute < 50:
+                continue
+            # 跳到未来小时（不应该）
+            if check_time > now:
+                continue
+            date_str = check_time.strftime("%Y-%m-%d")
+            hour_int = check_time.hour
+            key = f"{date_str}_{hour_int:02d}"
+            if key in state:
+                continue  # 已分析过
+            # 查截图是否存在
+            sc = self.config["screenshot"]
+            hour_dir = _Path(sc["output_dir"]).expanduser() / date_str / f"{hour_int:02d}"
+            if not hour_dir.exists() or not list(hour_dir.glob("*.jpg")):
+                continue
+            missing.append((date_str, hour_int, hour_dir))
+
+        if not missing:
+            self.log.info("watchdog: 过去 %d 小时无缺失时报告 ✓", lookback_hours)
+            return []
+
+        self.log.warning("watchdog: 发现 %d 个缺失时报告: %s", len(missing),
+                         [(d, h) for d, h, _ in missing])
+        import time as _time
+
+        def _run_one(date_str: str, hour: int, hour_dir):
+            try:
+                # job_analyze_hour 内部: target_hour = (now.hour - 1) % 24
+                # 要分析 hour 小时 → now 应该是 hour+1
+                next_hour = (hour + 1) % 24
+                next_day = date_str
+                if hour == 23:
+                    # 跨日：next_hour=0，表示下一天 00:50
+                    from datetime import timedelta as _td
+                    next_day = (datetime.strptime(date_str, "%Y-%m-%d") + _td(days=1)).strftime("%Y-%m-%d")
+                target_dt = datetime.strptime(f"{next_day} {next_hour:02d}:50", "%Y-%m-%d %H:%M")
+                self.log.info("watchdog: 补跑 %s_%02d 开始（触发器 now=%s）",
+                              date_str, hour, target_dt.strftime("%Y-%m-%d %H:%M"))
+                self.job_analyze_hour(now=target_dt)
+                self.log.info("watchdog: 补跑 %s_%02d 完成", date_str, hour)
+            except Exception as e:
+                import traceback
+                self.log.error("watchdog: 补跑 %s_%02d 失败: %s\n%s",
+                               date_str, hour, e, traceback.format_exc())
+
+        # 串行补跑（避免并发竞态，state 重复加载导致重复跑）
+        for d, h, hd in missing:
+            _run_one(d, h, hd)
+            _time.sleep(3)  # 间隔，避免 OpenClaw rate limit
+
+        self.log.info("watchdog: 补跑完成")
+        return [(d, h) for d, h, _ in missing]
+
     def _fallback_daily_summary(self, today_results: dict) -> dict:
         """AI 失败时的兜底汇总"""
         all_events = []
@@ -420,6 +490,11 @@ class Tracker:
             self.log.info("  - %s (id=%s) -> next: %s",
                          job.name, job.id, next_run)
         self.log.info("PID=%d", os.getpid())
+        # Watchdog：服务启动时检查过去 4 小时的缺失时报告，自动补跑
+        try:
+            self.watchdog_check_missing(lookback_hours=4)
+        except Exception as e:
+            self.log.error("watchdog 异常: %s", e)
         try:
             self.scheduler.start()
         except (KeyboardInterrupt, SystemExit):
@@ -441,6 +516,8 @@ def main():
                         help="只截一次图就退出（调试用）")
     parser.add_argument("--write-calendar", metavar="YYYY", type=int, nargs="?",
                         help="生成年度日历看板（默认当前年）")
+    parser.add_argument("--watchdog", action="store_true",
+                        help="手动触发 watchdog 检查并补跑缺失时报告")
     parser.add_argument("--once-analyze", metavar="YYYY-MM-DD/HH",
                         help="分析指定小时然后退出（调试用）")
     parser.add_argument("--config", default=str(CONFIG_PATH))
@@ -452,6 +529,14 @@ def main():
         year = args.write_calendar or datetime.now().year
         out = tracker.reporter.write_calendar_overview(year)
         print(f"已生成日历看板: {out}")
+        return
+
+    if args.watchdog:
+        missing = tracker.watchdog_check_missing(lookback_hours=4)
+        if missing:
+            print(f"已补跑: {missing}")
+        else:
+            print("过去 4 小时无缺失时报告")
         return
 
     if args.once_screenshot:
