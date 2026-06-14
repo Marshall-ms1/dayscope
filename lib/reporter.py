@@ -757,6 +757,10 @@ class Reporter:
           font-weight: 500;
           margin-left: 8px;
           white-space: nowrap;
+          /* sticky 右：横向滚动时钉在右 */
+          position: sticky;
+          right: 0;
+          z-index: 3;
         }}
 
         /* ===== 统计面板 ===== */
@@ -845,21 +849,23 @@ class Reporter:
         }});
 
         // === 手动实现 sticky：避免 CSS sticky 被 overflow-x: auto 破坏 ===
+        // 纵向：哪全全时滚动，.ds-group-label 钉在 viewport 顶部
+        // 横向：.ds-cat-pill 已经是 CSS sticky (right: 0)
         const ganttEl2 = dv.container.querySelector('.ds-gantt');
         if (ganttEl2 && !ganttEl2.__dsStickyBound) {{
           ganttEl2.__dsStickyBound = true;
           let raf = 0;
-          // 准备 pinned label 克隆元素（重用同一个）
           let clone = null;
           const ensureClone = () => {{
             if (!clone) {{
               clone = document.createElement('div');
-              clone.className = 'ds-group-label ds-group-label-clone';
+              clone.className = 'ds-group-label';
               clone.style.position = 'fixed';
               clone.style.zIndex = '999';
               clone.style.display = 'none';
               clone.style.background = 'var(--background-primary)';
               clone.style.boxShadow = '0 2px 4px rgba(0,0,0,0.15)';
+              clone.style.borderRadius = '4px';
               document.body.appendChild(clone);
             }}
             return clone;
@@ -867,17 +873,19 @@ class Reporter:
           const update = () => {{
             raf = 0;
             const labels = ganttEl2.querySelectorAll('.ds-group-label');
-            const gRect = ganttEl2.getBoundingClientRect();
-            // 找到 .ds-gantt-inner 的上边
+            // 找出“该被钉住”的 label
+            // 条件：该 label 原本应被钉在 .ds-gantt-inner top 位置（过 .gantt-inner 顶部后）
+            // 算法：对每个 label，如果其 r.top < innerTop 临界（已被滚过顶），取最靠下的那个
             const inner = ganttEl2.querySelector('.ds-gantt-inner');
-            const innerTop = inner ? inner.getBoundingClientRect().top : gRect.top;
-            // 找出最“应被钉住”的 label
+            const innerTop = inner ? inner.getBoundingClientRect().top : 0;
             let pinned = null;
             labels.forEach(label => {{
               const r = label.getBoundingClientRect();
-              if (r.top < innerTop) {{
+              // label 已被滚过 inner 顶（r.top < innerTop）
+              // 且 label 本身未滚出 viewport 顶部（r.bottom > 0）
+              if (r.top < innerTop && r.bottom > 0) {{
                 if (!pinned || r.top > pinned.getBoundingClientRect().top) {{
-                  pinned = label;
+                  pinned = label;  // 取最靠下（最近被滚过顶）
                 }}
               }}
             }});
@@ -897,14 +905,10 @@ class Reporter:
             if (raf) return;
             raf = requestAnimationFrame(update);
           }};
-          // 监听所有可能引起滚动的容器
           window.addEventListener('scroll', onScroll, {{ passive: true }});
           ganttEl2.addEventListener('scroll', onScroll, {{ passive: true }});
-          // 也监听 resize
           window.addEventListener('resize', onScroll, {{ passive: true }});
-          // 初始计算
           requestAnimationFrame(update);
-          // 定期重算（防止有内容异步加载）
           setInterval(update, 500);
         }}
 
