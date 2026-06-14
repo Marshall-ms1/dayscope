@@ -311,90 +311,288 @@ class Reporter:
         if not all_tasks:
             return "## 今日进度（甘特图）\n\n_暂无数据，等时报告陆续生成中..._"
 
-        # 2. 渲染甘特图（24 小时横向条带 + 任务彩色块）
-        lines = ["## 今日进度（甘特图）", ""]
-        # 顶部时间轴
-        lines.append("```")
-        lines.append("  00 02 04 06 08 10 12 14 16 18 20 22")
-        lines.append("  ├──┼──┼──┼──┼──┼──┼──┼──┼──┼──┼──┼──┤")
-        # 全天整体活跃度
-        bar = ["  "]
+        # 2. 计算活跃度（每个小时的挂机率）
+        activity = {}
         for h in range(24):
-            r = hourly_results.get(h)
+            r = hourly_results.get(h) or hourly_results.get(f"{date.strftime('%Y-%m-%d')}_{h:02d}")
             if not r:
-                ch = "·"
-            else:
-                events = r.get("events", [])
-                if not events:
-                    ch = "○"
-                else:
-                    idle = sum(1 for e in events if e.get("category") in ("挂机", "休息"))
-                    idle_ratio = idle / len(events) if events else 0
-                    if idle_ratio > 0.7:
-                        ch = "▒"  # 大量挂机
-                    elif idle_ratio > 0.3:
-                        ch = "░"
-                    else:
-                        ch = "█"  # 活跃
-            bar.append(ch)
-        bar.append("  整体活跃度")
-        lines.append("".join(bar))
-        lines.append("```")
-        lines.append("")
+                activity[h] = 0  # 无数据
+                continue
+            events = r.get("events", [])
+            if not events:
+                activity[h] = 0
+                continue
+            idle = sum(1 for e in events if e.get("category") in ("挂机", "休息"))
+            idle_ratio = idle / len(events) if events else 1
+            activity[h] = 1 - idle_ratio  # 活跃度
 
-        # 3. 任务甘特条（主线 + 支线分组）
+        # 3. 拆主线/支线
         main_tasks = [t for t in all_tasks if t["is_main"]]
         side_tasks = [t for t in all_tasks if not t["is_main"]]
 
-        if main_tasks:
-            lines.append("### 🟦 主线任务")
-            lines.append("")
-            for t in main_tasks:
-                lines.append(self._render_gantt_row(t, indent="  "))
-        if side_tasks:
-            lines.append("")
-            lines.append("### 🟨 支线/碎片")
-            lines.append("")
-            for t in side_tasks:
-                lines.append(self._render_gantt_row(t, indent="  "))
-
         # 4. 进度统计
-        done_hours = sum(1 for h in range(24) if hourly_results.get(h))
+        def _get_hour(h):
+            return hourly_results.get(h) or hourly_results.get(f"{date.strftime('%Y-%m-%d')}_{h:02d}")
+        done_hours = sum(1 for h in range(24) if _get_hour(h))
         total_productive_hours = sum(
-            1 for h in range(24) if hourly_results.get(h)
-            and any(e.get("category") not in ("挂机", "休息") for e in hourly_results[h].get("events", []))
+            1 for h in range(24)
+            if _get_hour(h)
+            and any(e.get("category") not in ("挂机", "休息") for e in _get_hour(h).get("events", []))
         )
-        lines += [
-            "",
-            f"**今日完成度**：{done_hours} / 24 小时有数据 · 有效产出 {total_productive_hours} 小时",
-            "",
-        ]
-        return "\n".join(lines)
+
+        # 5. 渲染 dataviewjs 块（CSS 美化甘特图）
+        return self._render_dataviewjs_gantt(
+            main_tasks, side_tasks, activity, done_hours, total_productive_hours
+        )
 
     def _render_gantt_row(self, task: dict, indent: str = "") -> str:
-        """渲染单条甘特条：标题 + 24 字符宽的进度条
-
-        优化：最少跨 1 小时（同小时任务也跨 sh 到 sh+1）
-        """
+        """保留旧接口（供其他场景使用），但已不被甘特图采用"""
         sh, eh = task["sh"], task["eh"]
         title = task["title"]
         cat = task["category"]
         hour_key = task["hour_key"]
-
-        # 24 字符宽的条
         bar = ["·"] * 24
         if eh == sh:
-            eh = sh + 1  # 最少跨 1 小时
+            eh = sh + 1
         for h in range(sh, min(eh + 1, 24)):
             bar[h] = "█"
         bar_str = "".join(bar)
-
-        # 标题截断
         max_title_len = 18
         if len(title) > max_title_len:
             title = title[:max_title_len - 1] + "…"
-
         return f"{indent}`{bar_str}` {title}  `{cat}`  `{int(hour_key):02d}:00`"
+
+    def _render_dataviewjs_gantt(self, main_tasks, side_tasks, activity,
+                                 done_hours, productive_hours) -> str:
+        """渲染 dataviewjs 版甘特图（CSS 美化）
+
+        Args:
+            main_tasks: 主线任务列表
+            side_tasks: 支线任务列表
+            activity: {hour: 0-1} 活跃度
+            done_hours: 今日有时报告的小时数
+            productive_hours: 有效产出小时数
+        """
+        import json
+        # JS 字符串转义：避免引号、反引号、${ 破坏 JS 语法
+        tasks_for_js = {
+            "main": [
+                {
+                    "sh": t["sh"], "eh": max(t["eh"], t["sh"] + 1),
+                    "title": t["title"],
+                    "category": t["category"],
+                    "hour": t["hour_key"],
+                }
+                for t in main_tasks
+            ],
+            "side": [
+                {
+                    "sh": t["sh"], "eh": max(t["eh"], t["sh"] + 1),
+                    "title": t["title"],
+                    "category": t["category"],
+                    "hour": t["hour_key"],
+                }
+                for t in side_tasks
+            ],
+            "activity": [round(activity.get(h, 0), 2) for h in range(24)],
+            "stats": {
+                "done": done_hours,
+                "productive": productive_hours,
+            }
+        }
+        # JSON 序列化后去掉 中文 里常见的特殊字符（避免冲突）
+        tasks_json = json.dumps(tasks_for_js, ensure_ascii=False, separators=(",", ":"))
+
+        # JS 代码块
+        js_code = f'''```dataviewjs
+// ===== DayScope 甘特图（由 dayscope 程序自动生成）=====
+const DATA = {tasks_json};
+const MAIN = DATA.main;
+const SIDE = DATA.side;
+const ACT = DATA.activity;
+
+function catColor(cat) {{
+  const map = {{
+    "深度工作": "#4a90e2",
+    "调试": "#7b68ee",
+    "文档": "#5cb85c",
+    "沟通": "#f5a623",
+    "学习": "#9b59b6",
+    "休息": "#95a5a6",
+    "挂机": "#7f8c8d",
+    "碎片": "#e67e22",
+  }};
+  return map[cat] || "#bdc3c7";
+}}
+
+function renderGroup(tasks, label, emoji) {{
+  if (tasks.length === 0) return "";
+  const rows = tasks.map(t => {{
+    const left = (t.sh / 24 * 100);
+    const width = ((t.eh - t.sh + 1) / 24 * 100);
+    const color = catColor(t.category);
+    return `<div class="ds-row">
+  <div class="ds-time">${{String(t.hour).padStart(2,'0')}}:${{String(t.sh % 1 * 60 | 0).padStart(2,'0')}}</div>
+  <div class="ds-bar-track">
+    <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" title="${{t.title}} · ${{t.category}} · ${{t.sh}}-${{t.eh}}时"></div>
+  </div>
+  <div class="ds-title">${{t.title}}</div>
+  <div class="ds-cat" style="color:${{color}};">${{t.category}}</div>
+</div>`;
+  }}).join("");
+  return `<div class="ds-group">
+  <div class="ds-group-label">${{emoji}} ${{label}} <span class="ds-count">${{tasks.length}} 个</span></div>
+  ${{rows}}
+</div>`;
+}}
+
+// 活跃度轴：24 个小方块
+const actBars = ACT.map((v, h) => {{
+  const cls = v === 0 ? "ds-act-none" : (v > 0.6 ? "ds-act-high" : (v > 0.3 ? "ds-act-mid" : "ds-act-low"));
+  return `<div class="${{cls}}" title="${{h}}时 · 活跃 ${{(v*100).toFixed(0)}}%"></div>`;
+}}).join("");
+
+const html = `
+<style>
+.ds-gantt {{
+  font-family: var(--font-interface);
+  font-size: 12px;
+  margin: 8px 0 16px 0;
+  padding: 12px;
+  background: var(--background-primary);
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+}}
+.ds-axis {{
+  display: flex;
+  align-items: center;
+  padding: 4px 0 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}}
+.ds-axis-time {{ width: 56px; flex-shrink: 0; }}
+.ds-axis-bar {{ flex: 1; display: flex; justify-content: space-between; padding: 0 4px; }}
+.ds-act-row {{
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  margin-bottom: 12px;
+  gap: 4px;
+}}
+.ds-act-label {{ width: 56px; flex-shrink: 0; color: var(--text-muted); font-size: 11px; }}
+.ds-act-track {{ flex: 1; display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }}
+.ds-act-track > div {{
+  height: 14px;
+  border-radius: 2px;
+  background: var(--background-secondary);
+  transition: all 0.2s;
+}}
+.ds-act-track > div:hover {{ transform: scaleY(1.3); }}
+.ds-act-none {{ background: var(--background-modifier-border) !important; opacity: 0.3; }}
+.ds-act-low {{ background: linear-gradient(90deg, #e67e22 0%, #f5a623 100%) !important; opacity: 0.5; }}
+.ds-act-mid {{ background: linear-gradient(90deg, #f5a623 0%, #f1c40f 100%) !important; opacity: 0.75; }}
+.ds-act-high {{ background: linear-gradient(90deg, #5cb85c 0%, #4a90e2 100%) !important; }}
+.ds-row {{
+  display: flex;
+  align-items: center;
+  height: 24px;
+  margin: 2px 0;
+  transition: background 0.15s;
+}}
+.ds-row:hover {{ background: var(--background-modifier-hover); border-radius: 4px; }}
+.ds-time {{ width: 56px; flex-shrink: 0; color: var(--text-muted); font-family: var(--font-monospace); font-size: 11px; padding-left: 4px; }}
+.ds-bar-track {{
+  flex: 1;
+  height: 14px;
+  background: var(--background-secondary);
+  border-radius: 3px;
+  position: relative;
+  margin: 0 8px;
+  overflow: hidden;
+}}
+.ds-bar {{
+  position: absolute;
+  height: 100%;
+  border-radius: 3px;
+  opacity: 0.85;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: opacity 0.15s;
+  cursor: pointer;
+}}
+.ds-bar:hover {{ opacity: 1; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }}
+.ds-title {{
+  width: 220px;
+  flex-shrink: 0;
+  padding-left: 8px;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}}
+.ds-cat {{
+  width: 80px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+}}
+.ds-group {{ margin-bottom: 16px; }}
+.ds-group-label {{
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-normal);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}}
+.ds-count {{
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: normal;
+}}
+.ds-stats {{
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: 11px;
+  color: var(--text-muted);
+}}
+.ds-stats span {{ padding: 2px 8px; background: var(--background-secondary); border-radius: 4px; }}
+</style>
+
+<div class="ds-gantt">
+  <div class="ds-axis">
+    <div class="ds-axis-time">活跃度</div>
+    <div class="ds-axis-bar">
+      <span>00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span>24</span>
+    </div>
+  </div>
+  <div class="ds-act-row">
+    <div class="ds-act-label">24h</div>
+    <div class="ds-act-track">${{actBars}}</div>
+  </div>
+  ${{renderGroup(MAIN, "主线任务", "🟦")}}
+  ${{renderGroup(SIDE, "支线/碎片", "🟨")}}
+  <div class="ds-stats">
+    <span>📶 时报覆盖 ${{DATA.stats.done}}/24h</span>
+    <span>⚡ 有效产出 ${{DATA.stats.productive}}h</span>
+    <span>🟦 ${{MAIN.length}} 主线</span>
+    <span>🟨 ${{SIDE.length}} 支线</span>
+  </div>
+</div>
+`;
+
+dv.container.innerHTML = html;
+```'''
+        return "## 今日进度（甘特图）\n\n" + js_code + "\n"
 
     def update_daily_gantt(self, date: datetime, hourly_results: dict, daily_result: dict = None):
         """每小时更新日报的甘特图块（不动 AI 总结部分）
