@@ -664,6 +664,7 @@ class Reporter:
         .ds-bar-wrap {{
           position: relative;
           height: 26px;
+          overflow: visible;  /* 允许 hover 气泡出 wrap 边界 */
         }}
         .ds-bar {{
           position: absolute;
@@ -711,37 +712,22 @@ class Reporter:
           font-family: var(--font-monospace);
           color: white;
         }}
-        /* ===== 自定义 hover tooltip（让 data-tooltip 变可见气泡） ===== */
-        .ds-bar[data-tooltip] {{
-          position: relative;
-        }}
-        .ds-bar[data-tooltip]:hover::after {{
-          content: attr(data-tooltip);
-          position: absolute;
-          bottom: calc(100% + 6px);
-          left: 50%;
-          transform: translateX(-50%);
+        /* ===== 动态 hover 气泡（由 JS 插入到 body） ===== */
+        .ds-tooltip-popup {{
+          position: fixed;
+          z-index: 99999;
           background: rgba(0, 0, 0, 0.92);
           color: white;
           padding: 6px 10px;
           border-radius: 4px;
           font-size: 11px;
           white-space: nowrap;
-          max-width: 360px;
-          z-index: 1000;
+          max-width: 400px;
           box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           font-family: var(--font-interface);
           font-weight: 500;
-        }}
-        .ds-bar[data-tooltip]:hover::before {{
-          content: "";
-          position: absolute;
-          bottom: 100%;
-          left: 50%;
-          transform: translateX(-50%);
-          border: 5px solid transparent;
-          border-top-color: rgba(0, 0, 0, 0.92);
-          z-index: 1000;
+          pointer-events: none;
+          display: none;
         }}
         .ds-cat-pill {{
           font-size: 10px;
@@ -820,6 +806,59 @@ class Reporter:
         `;
 
         dv.container.innerHTML = html;
+
+        // === 动态 hover 气泡（不依赖 CSS ::after，避免被裁切） ===
+        // 事件代理：在 .ds-gantt 根上监听 mouseover/mouseout
+        const root = dv.container.querySelector('.ds-gantt');
+        if (root && !root.__dsTooltipBound) {{
+          root.__dsTooltipBound = true;
+          let tip = null;
+          const ensureTip = () => {{
+            if (!tip) {{
+              tip = document.createElement('div');
+              tip.className = 'ds-tooltip-popup';
+              document.body.appendChild(tip);
+            }}
+            return tip;
+          }};
+          const removeTip = () => {{
+            if (tip) {{
+              tip.remove();
+              tip = null;
+            }}
+          }};
+          root.addEventListener('mouseover', (e) => {{
+            const target = e.target.closest('[data-tooltip]');
+            if (!target) return;
+            const text = target.getAttribute('data-tooltip');
+            if (!text) return;
+            const t = ensureTip();
+            t.textContent = text;
+            const r = target.getBoundingClientRect();
+            // 先加在 0,0 并 measure
+            t.style.left = '0px';
+            t.style.top = '0px';
+            t.style.opacity = '0';
+            t.style.display = 'block';
+            const tr = t.getBoundingClientRect();
+            let left = r.left + r.width / 2 - tr.width / 2;
+            // 避免被右边裁
+            if (left + tr.width > window.innerWidth - 8) {{
+              left = window.innerWidth - tr.width - 8;
+            }}
+            if (left < 8) left = 8;
+            t.style.left = left + 'px';
+            t.style.top = (r.top - tr.height - 8) + 'px';
+            t.style.opacity = '1';
+          }});
+          root.addEventListener('mouseout', (e) => {{
+            const target = e.target.closest('[data-tooltip]');
+            if (!target) return;
+            const next = e.relatedTarget;
+            if (next && target.contains(next)) return;
+            removeTip();
+          }});
+        }}
         ```'''
         return "## 今日进度（甘特图）\n\n" + js_code + "\n"
 
