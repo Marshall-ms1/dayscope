@@ -666,16 +666,21 @@ class Reporter:
         .ds-bar-wrap {{
           position: relative;
           height: 32px;
-          /* 贯穿全行的背景轨道（16px 高的浅色带状区域） */
-          background: linear-gradient(to bottom,
-            transparent 0,
-            transparent 8px,
-            rgba(255,255,255,0.06) 8px,
-            rgba(255,255,255,0.06) 24px,
-            transparent 24px,
-            transparent 32px);
           overflow: visible;  /* 允许 hover 气泡出 wrap 边界 */
           min-width: 0;
+        }}
+        /* 贯穿全行的背景轨道（16px 高的圆角带状区域，两端圆角） */
+        .ds-bar-wrap::before {{
+          content: "";
+          position: absolute;
+          top: 50%;
+          left: 0;
+          right: 0;
+          height: 16px;
+          transform: translateY(-50%);
+          background: rgba(255,255,255,0.06);
+          border-radius: 8px;
+          z-index: 0;
         }}
         .ds-bar {{
           position: absolute;
@@ -687,6 +692,7 @@ class Reporter:
           cursor: pointer;
           transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
           min-width: 36px;     /* 短任务也保持胶囊形状，不变成细线 */
+          z-index: 1;          /* 浮在圆角轨道之上 */
         }}
         .ds-bar:hover {{
           transform: translateY(-50%) scaleY(1.15);
