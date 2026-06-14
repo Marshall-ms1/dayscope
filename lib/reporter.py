@@ -535,8 +535,8 @@ class Reporter:
           <div class="ds-time">${{fmtTime(t.sh_min)}}</div>
           <div class="ds-bar-wrap">
             <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" data-tooltip="${{tooltipHtml}}"></div>
-            <span class="ds-bar-title">${{titleHtml}}</span>
           </div>
+          <span class="ds-bar-title">${{titleHtml}}</span>
           <div class="ds-cat-pill" style="background:${{color}};">${{t.category}}</div>
         </div>`;
         }}
@@ -644,7 +644,7 @@ class Reporter:
         /* ===== 任务行（细胶囊 + 背景轨道） ===== */
         .ds-row {{
           display: grid;
-          grid-template-columns: 56px 1fr auto;
+          grid-template-columns: 56px 1fr minmax(120px, 1fr) auto;
           align-items: center;
           height: 30px;
           margin: 0;
@@ -691,20 +691,12 @@ class Reporter:
           z-index: 5;
         }}
         .ds-bar-title {{
-          position: absolute;
-          left: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          margin-left: 0;
           font-size: 12px;
           color: var(--text-normal);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          max-width: 100%;
-          padding-left: 0;
-          z-index: 1;
-          /* 标题固定在行起点（紧贴时间轴），不是条后面 */
+          min-width: 0;
         }}
         .ds-cat-pill {{
           font-size: 10px;
