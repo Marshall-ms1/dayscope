@@ -203,4 +203,66 @@ print(result)
 
 ---
 
-最后更新：2026-06-13
+## 关键设计决策（踩过的坑）
+
+### 1. 两步分析：视觉 → 文本归纳
+
+AI 视觉模型逐图识别，文本模型跨图归纳：
+
+```
+60 张截图 → 60 个 event (vision) → 3-7 个任务 (text)
+```
+
+**为什么不是一步**：M3 视觉模型看不到“60 张图一样”这个事实，会逐图硬凑“在写代码”。文本模型能一眼看出“60 个 event 主题相同 → 1 个任务”
+
+### 2. 挂机/空档识别（重要）
+
+**问题**：60 张相同图，AI 默认全识为“在工作”
+
+**修法**：prompt 必须明确三句：
+1. 屏幕内容几乎一样 → 标 `category=挂机`
+2. **不需证明他在工作**，看不到动作就是挂机
+3. **60 张聊天页不间断 = 60 个挂机**（别被聊天页内容误导）
+
+验证（17 点挂机场景）：弱 prompt 只识别 1/60，强 prompt 识别 54/60（95% 准确率）
+
+### 3. 截图去重：不用 md5
+
+**问题**：md5 hash 会因鼠标光标位置变动而不同 → 误判为“已变化” → 60 张相同图全保留
+
+**修法**：PIL **像素采样**（5×5 = 25 点 + 缩到 64×64 灰度）生成 hash。鼠标小动不会改变采样点
+
+### 4. Obsidian 渲染：不用 HTML
+
+**问题**：`<details><summary>...</summary></details>` 在 Obsidian 被当代码块
+
+**修法**：用 Obsidian 原生 callout 语法：
+```markdown
+> [!note] 标题
+>
+> 内容
+```
+
+### 5. service 环境变量
+
+systemd service 跑后台时，**环境变量可能不包含 openclaw 路径**。修法：service 的 `[Service]` 段加：
+
+```ini
+Environment="PATH=%h/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin"
+```
+
+或 `install.sh` 中 `command -v openclaw` 找到路径后写入 service。
+
+### 6. 名字变更成本
+
+`截图-跟踪器` 改名为 `DayScope` 涉及：
+- 目录 `~/.screenshot-tracker` → `~/.dayscope`
+- service 单元名
+- 扩展 uuid（**一旦 GNOME 加载过旧 uuid，需要用新 uuid 或重装扩展**）
+- config 里所有路径
+
+**一次性 sed 替换 + 重装扩展** 必重启用 systemd + 重新登入加载 GNOME。
+
+---
+
+最后更新：2026-06-14

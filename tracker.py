@@ -170,7 +170,15 @@ class Tracker:
             prev_summary = prev.get("summary", "")
 
         prompt = ai["prompt_hourly"]
-        result = self.analyzer.analyze_hour(hour_dir, prompt, prev_summary)
+        aggregate_prompt = ai.get("prompt_aggregate_hourly", "")
+        # 读上一小时的任务列表（供交叉上下文）
+        prev_tasks = ""
+        if prev and isinstance(prev, dict):
+            prev_tasks = json.dumps(prev.get("tasks", []), ensure_ascii=False, indent=2)[:2000]
+        result = self.analyzer.analyze_hour(
+            hour_dir, prompt, aggregate_prompt,
+            prev_summary=prev_summary, prev_tasks=prev_tasks
+        )
         if not result:
             self.log.warning("分析 %s 失败", key)
             return
@@ -212,18 +220,30 @@ class Tracker:
             self.log.info("今日无时报告，跳过日报生成")
             return
 
-        # 构造日报 prompt 输入
+        # 构造日报 prompt 输入：每个时报告 summary + tasks 列表
         hourly_summaries = []
         for h in sorted(today_results.keys()):
             r = today_results[h]
-            if r:
-                hourly_summaries.append(
-                    f"{h:02d}:00 - {r.get('summary', '无')} "
-                    f"(模式: {r.get('mode', '?')}, "
-                    f"专注: {r.get('focus_score', 0):.2f}, "
-                    f"产出: {r.get('productivity_score', 0):.2f})"
+            if not r:
+                continue
+            block = [
+                f"【{h:02d}:00 - {h:02d}:59】 {r.get('summary', '无')} "
+                f"(模式: {r.get('mode', '?')}, 专注: {r.get('focus_score', 0):.2f}, "
+                f"产出: {r.get('productivity_score', 0):.2f})"
+            ]
+            for t in r.get("tasks", []):
+                task_line = (
+                    f"  - 任务: {t.get('title', '?')}"
+                    f" [{t.get('category', '?')}]"
+                    f" ({t.get('start', '?')}-{t.get('end', '?')})"
                 )
-        hourly_text = "\n".join(hourly_summaries) or "（无）"
+                if t.get("details"):
+                    task_line += f" | {t['details']}"
+                if t.get("outcomes") and t["outcomes"] != ["none"]:
+                    task_line += f" | 产出: {','.join(o for o in t['outcomes'] if o != 'none')}"
+                block.append(task_line)
+            hourly_summaries.append("\n".join(block))
+        hourly_text = "\n\n".join(hourly_summaries) or "（无）"
 
         # 单独调用一次 AI 汇总
         prompt_daily = ai.get("prompt_daily", "")
@@ -418,7 +438,10 @@ def main():
         hour_dir = (Path(tracker.config["screenshot"]["output_dir"]).expanduser()
                     / date_str / hour_str)
         prompt = tracker.config["ai"]["prompt_hourly"]
-        result = tracker.analyzer.analyze_hour(hour_dir, prompt)
+        result = tracker.analyzer.analyze_hour(
+            hour_dir, prompt,
+            tracker.config["ai"].get("prompt_aggregate_hourly", "")
+        )
         if result:
             print(json.dumps(result, ensure_ascii=False, indent=2))
             date = datetime.strptime(date_str, "%Y-%m-%d")

@@ -6,7 +6,7 @@ Wants=graphical-session.target
 [Service]
 Type=simple
 WorkingDirectory=@USER_HOME@/.dayscope
-Environment="PATH=@USER_HOME@/.dayscope/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PATH=@USER_HOME@/.dayscope/venv/bin:@OPENCLAW_PATHS@:/usr/local/bin:/usr/bin:/bin"
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=@USER_HOME@/.Xauthority"
 # Wayland 下需要这些环境变量

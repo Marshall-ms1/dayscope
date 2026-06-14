@@ -50,10 +50,30 @@ echo "==> 3. 创建目录"
 mkdir -p "$INSTALL_DIR"/{logs,screenshots,state,lib}
 mkdir -p "$HOME/WorkSpace/Document/汇报/日报"
 
-echo "==> 4. 渲染 service 文件（替换 \$HOME 和 user id）"
+echo "==> 4. 渲染 service 文件（替换 \$HOME、user id、openclaw 路径）"
 USER_ID=$(id -u)
+# Detect openclaw location (nvm / pip --user / 自装都找)
+OPENCLAW_PATHS=""
+for path in "$HOME/.nvm/current/bin" \
+            "$HOME/.nvm/versions/node"/*/"bin" \
+            "$HOME/.local/bin" \
+            "$HOME/bin" \
+            "/usr/local/bin" \
+            "/opt/openclaw/bin"; do
+    if [ -x "$path/openclaw" ]; then
+        OPENCLAW_PATHS="$OPENCLAW_PATHS:$path"
+    fi
+done
+# 去前导冒号
+OPENCLAW_PATHS="${OPENCLAW_PATHS#:}"
+if [ -z "$OPENCLAW_PATHS" ]; then
+    echo "    ⚠️  找不到 openclaw 命令（AI 分析会失败，但截图还能跑）"
+    OPENCLAW_PATHS="/usr/local/bin"
+fi
+echo "    openclaw 路径：$OPENCLAW_PATHS"
 sed -e "s|@USER_HOME@|$HOME|g" \
     -e "s|@USER_ID@|$USER_ID|g" \
+    -e "s|@OPENCLAW_PATHS@|$OPENCLAW_PATHS|g" \
     "$SERVICE_TEMPLATE" > "$SERVICE_RENDERED"
 
 echo "==> 5. 安装 systemd user service"

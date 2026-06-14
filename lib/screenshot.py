@@ -69,7 +69,7 @@ class ScreenshotTaker:
         now = now or datetime.now()
         hour_dir = self.output_dir / now.strftime("%Y-%m-%d") / now.strftime("%H")
         hour_dir.mkdir(parents=True, exist_ok=True)
-        filename = hour_dir / now.strftime("%M-%S.jpg")
+        filename = hour_dir / now.strftime("%Y%m%d-%H%M%S.jpg")
 
         # dbus 参数：b include_cursor, b flash, s filename
         # 调成功后 mutter 会写一个 PNG 到 filename（文件名不能变 .jpg）
@@ -110,10 +110,35 @@ class ScreenshotTaker:
             raise
 
     def is_unchanged(self, file_path: Path) -> bool:
-        """通过文件 hash 简单判断是否变化（仅作优化）"""
-        h = hashlib.md5(file_path.read_bytes()).hexdigest()
-        unchanged = (h == self._last_hash)
-        self._last_hash = h
+        """通过像素采样判断是否变化（避免鼠标光标位置不同被误判）
+
+        为何不用 md5：鼠标光标在一个像素位变动会改变 hash，但屏幕内容几乎不变
+        为何不用 perceptual hash：额外装包（imagehash），降速度
+        抽样：缩到 64x64 灰度 + 采样上中下左中右 9 点 + 跟上次 hash 比对
+        """
+        try:
+            from PIL import Image
+        except ImportError:
+            # 退化为 md5
+            h = hashlib.md5(file_path.read_bytes()).hexdigest()
+            unchanged = (h == self._last_hash)
+            self._last_hash = h
+            return unchanged
+
+        try:
+            img = Image.open(file_path).convert("L").resize((64, 64), Image.LANCZOS)
+        except Exception:
+            return False
+
+        # 采样 9 个区域：四角 + 边中 + 中心
+        samples = []
+        w, h = img.size
+        for y in [0, h//4, h//2, 3*h//4, h-1]:
+            for x in [0, w//4, w//2, 3*w//4, w-1]:
+                samples.append(img.getpixel((x, y)))
+        h_visual = hashlib.md5(bytes(samples)).hexdigest()
+        unchanged = (h_visual == self._last_hash)
+        self._last_hash = h_visual
         return unchanged
 
     def cleanup_old(self, days: int):

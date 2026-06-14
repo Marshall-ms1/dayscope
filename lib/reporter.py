@@ -22,62 +22,86 @@ class Reporter:
         return folder
 
     def write_hourly(self, date: datetime, hour: int, result: dict):
-        """写时报"""
+        """写时报：任务驱动的结构"""
         folder = self.date_folder(date)
         path = folder / self.hourly_tpl.format(hour=hour)
 
+        tasks = result.get("tasks", [])
         events = result.get("events", [])
         summary = result.get("summary", "（无总结）")
         mode = result.get("mode", "混合")
         focus = result.get("focus_score", 0)
         productivity = result.get("productivity_score", 0)
         insights = result.get("insights", [])
-        outputs = result.get("key_outputs", [])
 
         lines = [
             f"# 时报 · {date.strftime('%Y-%m-%d')} {hour:02d}:00 - {hour:02d}:59",
             "",
-            f"> **本小时一句话**：{summary}",
+            f"> ## {summary}",
             "",
             f"- **工作模式**：{mode}",
             f"- **专注度**：{focus:.2f} / 1.0",
             f"- **生产力**：{productivity:.2f} / 1.0",
+            f"- **任务数**：{len(tasks)} 个",
             "",
-            "## 活动时间线",
+            "## 本小时做了什么",
             "",
         ]
 
+        if tasks:
+            # 任务汇总（主要看这里）
+            for i, t in enumerate(tasks, 1):
+                title = t.get("title", "（未命名任务）")
+                cat = t.get("category", "")
+                start = t.get("start", "?")
+                end = t.get("end", "?")
+                details = t.get("details", "")
+                outcomes = t.get("outcomes", [])
+                apps = t.get("apps", [])
+
+                lines.append(f"### {i}. {title}  `{cat}`  `{start} - {end}`")
+                if details:
+                    lines.append(f"   {details}")
+                if apps:
+                    lines.append(f"   - **应用**: {', '.join(apps)}")
+                if outcomes and outcomes != ["none"]:
+                    pretty = ", ".join(o for o in outcomes if o != "none")
+                    if pretty:
+                        lines.append(f"   - **产出**: {pretty}")
+                lines.append("")
+        else:
+            lines.append("_（未识别出任务，可能识别失败）_")
+            lines.append("")
+
+        # 原始事件（Obsidian 兼容的 callout 折叠块）
         if events:
+            lines += [
+                "> [!note] 原始事件（仅供查验）",
+                "",
+            ]
             lines.append("| 时间 | 应用 | 类型 | 活动 |")
             lines.append("|------|------|------|------|")
             for e in events:
-                start = e.get("start", "?")
-                end = e.get("end", "?")
+                time = e.get("time", "?")
                 app = e.get("app", "?")
                 cat = e.get("category", "")
                 activity = e.get("activity", "")
                 details = e.get("details", "")
-                line = f"| {start}-{end} | {app} | {cat} | {activity}"
+                line = f"| {time} | {app} | {cat} | {activity}"
                 if details:
-                    line += f"<br><sub>{details}</sub>"
+                    line += f" — {details}"
                 lines.append(line + " |")
-        else:
-            lines.append("_（无活动记录）_")
-
-        if outputs:
-            lines += ["", "## 关键产出", ""]
-            for o in outputs:
-                lines.append(f"- {o}")
+            lines.append("")
 
         if insights:
-            lines += ["", "## 洞察与建议", ""]
+            lines += ["", "## 💡 洞察与建议", ""]
             for i, ins in enumerate(insights, 1):
                 lines.append(f"{i}. {ins}")
 
         lines += [
             "",
             "---",
-            f"_生成于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · AI 自动分析_",
+            f"_生成于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · AI 自动归纳_",
             "",
         ]
         path.write_text("\n".join(lines), encoding="utf-8")
