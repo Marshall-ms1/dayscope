@@ -713,6 +713,27 @@ const DAYS = __DAYS__;
 const MONTHS = __MONTHS__;
 const YEAR = __YEAR__;
 
+// 全局跳转函数：使用 Obsidian app API 跳转到日报
+window.__openDaily = function(dateStr) {
+  const filePath = `${dateStr}/日报.md`;
+  try {
+    if (typeof app !== "undefined" && app.workspace) {
+      const file = app.vault.getAbstractFileByPath(filePath);
+      if (file) {
+        app.workspace.openLinkText(filePath, "", false);
+        return;
+      } else {
+        new Notice(`📅 ${dateStr} 还没有日报（该日无数据）`, 3000);
+        return;
+      }
+    }
+  } catch (e) {
+    console.error("DayScope openDaily error:", e);
+  }
+  // 降级：使用 obsidian:// 协议
+  window.location.href = `obsidian://open?path=${encodeURIComponent(filePath)}`;
+};
+
 function dayColor(d) {
   // 6 档：有数据但全挂机（浅蓝）→ 活跃小时梯度（绿色）
   if (!d || d.events === 0) return "#ebedf0";
@@ -757,10 +778,11 @@ function renderMonth(monthStr) {
     const dd = monthDays[i] || { date: `${monthStr}-${pad2(i+1)}`, active: 0, focus: 0, events: 0 };
     const color = dayColor(dd);
     const title = `${dd.date} · ${dayLabel(dd)} · 专注度 ${(dd.focus*100).toFixed(0)}% · ${dd.events} 事件`;
-    cells += `<a class="ds-cell"
-                 href="${dd.date}/日报.md"
+    cells += `<div class="ds-cell"
+                 data-date="${dd.date}"
+                 onclick="__openDaily('${dd.date}')"
                  style="background:${color};"
-                 title="${title}"></a>`;
+                 title="${title}"></div>`;
   }
   return `<div class="ds-month" data-month="${monthStr}">
     <div class="ds-month-name" onclick="window.__toggleMd('${monthStr}', this)" style="cursor:pointer;">
@@ -794,10 +816,11 @@ function renderMonthDetail(monthStr) {
       const act = (d.hourly && d.hourly[h]) || 0;
       const color = hourColor(act);
       const title = `${d.date} ${pad2(h)}:00 · 活跃度 ${(act*100).toFixed(0)}%`;
-      cellsHtml += `<a class="ds-md-cell"
-                       href="${d.date}/日报.md"
+      cellsHtml += `<div class="ds-md-cell"
+                       data-date="${d.date}"
+                       onclick="__openDaily('${d.date}')"
                        style="background:${color};"
-                       title="${title}"></a>`;
+                       title="${title}"></div>`;
     }
     rows += `<div class="ds-md-row">
       <div class="ds-md-date">${dayNum}</div>
