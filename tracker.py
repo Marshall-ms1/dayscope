@@ -459,6 +459,19 @@ class Tracker:
                 coalesce=True,
             )
 
+        # 补漏 job：每 15 分钟扫一次过去 3 小时，补上任何 missing 小时
+        # 原因：HH:50 cron 只检查 HH-1，watchdog 补了 HH-1 后 cron 会跳过，
+        # 导致下一小时的 HH 在等到下下小时 HH:50 才被分析（如 20 点要等 21:50）
+        if ai.get("enabled", True):
+            self.scheduler.add_job(
+                self.job_check_missing_hours,
+                IntervalTrigger(minutes=15),
+                id="check_missing_hours",
+                name="每 15 分钟补漏缺失时报告",
+                max_instances=1,
+                coalesce=True,
+            )
+
         # 日报 job
         if ai.get("enabled", True):
             hh, mm = ai.get("daily_run_at", "23:55").split(":")

@@ -607,10 +607,20 @@ class Reporter:
         /* ===== 时间锚点条 ===== */
         .ds-timeline {{
           position: relative;
-          margin: 8px 0 12px 0;
+          margin: 0;  /* 上下边距交给外层 wrap */
           padding: 18px 0 6px 0;
           border-bottom: 1px dashed var(--background-modifier-border);
+          height: 100%;
         }}
+        .ds-timeline-wrap {{
+          display: grid;
+          grid-template-columns: 64px 1fr 120px;
+          align-items: stretch;
+          margin: 8px 0 12px 0;
+        }}
+        .ds-timeline-wrap > .ds-timeline {{ grid-column: 2; }}
+        .ds-timeline-wrap > .ds-time,
+        .ds-timeline-wrap > .ds-cat-pill {{ visibility: hidden; }}
         .ds-marker {{ position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }}
         .ds-marker-tick {{ display: block; width: 1px; height: 4px; background: var(--text-muted); opacity: 0.6; }}
         .ds-marker-label {{ font-family: var(--font-monospace); font-size: 10px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; }}
@@ -622,8 +632,18 @@ class Reporter:
           display: grid;
           grid-template-columns: repeat(24, 1fr);
           gap: 3px;
+          margin: 0;  /* 上下边距交给外层 wrap */
+          height: 100%;
+        }}
+        .ds-act-wrap {{
+          display: grid;
+          grid-template-columns: 64px 1fr 120px;
+          align-items: stretch;
           margin: 4px 0 12px 0;
         }}
+        .ds-act-wrap > .ds-act-row {{ grid-column: 2; }}
+        .ds-act-wrap > .ds-time,
+        .ds-act-wrap > .ds-cat-pill {{ visibility: hidden; }}
         .ds-act-cell {{
           height: 18px;
           border-radius: 3px;
@@ -797,16 +817,24 @@ class Reporter:
             </div>
           </div>
           <div class="ds-gantt-inner">
-          <!-- 时间锚点 -->
-          <div class="ds-timeline">
-            ${{majorMarkers}}
+          <!-- 时间锚点：3列网格中 1fr 中画与任务条对齐 -->
+          <div class="ds-timeline-wrap">
+            <div class="ds-time">--</div>
+            <div class="ds-timeline">
+              ${{majorMarkers}}
+            </div>
+            <div class="ds-cat-pill">--</div>
           </div>
 
           <!-- 活跃度热力条 -->
           <div class="ds-act-label">活跃度（24h）</div>
-          <div class="ds-act-row" style="position:relative;">
-            ${{actBars}}
-            ${{nowMarker}}
+          <div class="ds-act-wrap">
+            <div class="ds-time">--</div>
+            <div class="ds-act-row" style="position:relative;">
+              ${{actBars}}
+              ${{nowMarker}}
+            </div>
+            <div class="ds-cat-pill">--</div>
           </div>
 
           <!-- 任务按时段分组 -->
