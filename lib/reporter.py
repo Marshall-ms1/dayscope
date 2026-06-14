@@ -501,11 +501,12 @@ class Reporter:
           return "#" + [r, g, b].map(x => Math.round(x).toString(16).padStart(2, "0")).join("");
         }}
 
-        // ===== 时间锚点（6/12/18/24）=====
-        const majorHours = [0, 6, 12, 18, 24];
+        // ===== 时间锚点（4h 间隔 7 标记）=====
+        const majorHours = [0, 4, 8, 12, 16, 20, 24];
         const majorMarkers = majorHours.map(h => {{
           const left = (h / 24 * 100).toFixed(1);
-          return `<div class="ds-marker" style="left:${{left}}%"><span class="ds-marker-tick"></span><span class="ds-marker-label">${{String(h).padStart(2,"0")}}:00</span></div>`;
+          const label = h === 24 ? "24" : String(h).padStart(2, "0");
+          return `<div class="ds-marker" style="left:${{left}}%"><span class="ds-marker-tick"></span><span class="ds-marker-label">${{label}}</span></div>`;
         }}).join("");
 
         // ===== 活跃度热力条（24 小时，颜色 + 高度）=====
@@ -525,22 +526,20 @@ class Reporter:
 
         function renderTask(t) {{
           const left = (t.sh_min / (24 * 60) * 100);
-          const width = Math.max(2, (t.eh_min - t.sh_min) / (24 * 60) * 100);
+          const width = Math.max(1.5, (t.eh_min - t.sh_min) / (24 * 60) * 100);
           const color = catColor(t.category);
-          const darkBg = darken(color, 0.4);
-          const longEnough = width > 12;
+          const longEnough = width > 8;
           // title、tooltip 都在 Python 端预计算并 HTML 转义，JS 端只读不加工
           const titleHtml = t.title_html;
           const tooltipHtml = t.tooltip_html;
           return `<div class="ds-row" data-time="${{t.sh_min}}" data-tooltip="${{tooltipHtml}}">
           <div class="ds-time">${{fmtTime(t.sh_min)}}</div>
           <div class="ds-bar-wrap">
-            <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" data-tooltip="${{tooltipHtml}}">
-              ${{longEnough ? `<span class="ds-bar-title">${{titleHtml}}</span>` : `<span class="ds-bar-mini-icon">${{catEmoji(t.category)}}</span>`}}
-              ${{longEnough ? `<span class="ds-bar-dur" style="background:${{darkBg}};">${{fmtMin(t.duration_min)}}</span>` : `<span class="ds-bar-mini-dur" style="background:${{darkBg}};">${{fmtMin(t.duration_min)}}</span>`}}
-            </div>
+            <div class="ds-bar" style="left:${{left}}%; width:${{width}}%; background:${{color}};" data-tooltip="${{tooltipHtml}}"></div>
           </div>
-          <div class="ds-cat-pill" style="background:${{color}};">${{catEmoji(t.category)}} ${{t.category}}</div>
+          <div class="ds-meta">
+            ${{longEnough ? `<span class="ds-bar-title">${{titleHtml}}</span>` : `<span class="ds-bar-title ds-bar-title-only">${{titleHtml}}</span>`}}
+          </div>
         </div>`;
         }}
 
@@ -644,17 +643,17 @@ class Reporter:
         }}
         .ds-group-time {{ font-size: 10px; color: var(--text-muted); font-weight: normal; font-family: var(--font-monospace); }}
 
-        /* ===== 任务行 ===== */
+        /* ===== 任务行（细胶囊 + 背景轨道） ===== */
         .ds-row {{
           display: grid;
-          grid-template-columns: 56px 1fr 90px;
+          grid-template-columns: 56px 1fr auto;
           align-items: center;
-          height: 30px;
-          margin: 2px 0;
-          transition: background 0.15s;
-          border-radius: 4px;
+          height: 36px;
+          margin: 0;
+          padding: 0;
+          gap: 12px;
         }}
-        .ds-row:hover {{ background: rgba(255,255,255,0.04); }}
+        .ds-row:hover {{ background: rgba(255,255,255,0.02); }}
         .ds-time {{
           font-family: var(--font-monospace);
           font-size: 11px;
@@ -663,54 +662,47 @@ class Reporter:
         }}
         .ds-bar-wrap {{
           position: relative;
-          height: 26px;
-          overflow: visible;  /* 允许 hover 气泡出 wrap 边界 */
+          height: 36px;
+          /* 贯穿全行的背景轨道（细中轴线） */
+          background: linear-gradient(to right,
+            transparent 0,
+            rgba(255,255,255,0.06) 0,
+            rgba(255,255,255,0.06) 100%);
+          background-size: 100% 1px;
+          background-repeat: no-repeat;
+          background-position: 0 50%;
         }}
         .ds-bar {{
           position: absolute;
-          top: 0; height: 100%;
-          border-radius: 4px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-          display: flex; align-items: center;
-          padding: 0 6px;
-          gap: 6px;
-          color: white;
-          overflow: hidden;
+          top: 50%;
+          transform: translateY(-50%);
+          height: 14px;        /* 细胶囊 */
+          border-radius: 7px;  /* 全圆角 */
+          box-shadow: 0 1px 2px rgba(0,0,0,0.15);
           cursor: pointer;
-          transition: transform 0.15s, box-shadow 0.15s;
+          transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+          min-width: 6px;
         }}
-        .ds-bar:hover {{ transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 5; }}
+        .ds-bar:hover {{
+          transform: translateY(-50%) scaleY(1.2);
+          filter: brightness(1.12);
+          box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+          z-index: 5;
+        }}
+        .ds-meta {{
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+          padding-right: 4px;
+        }}
         .ds-bar-title {{
-          font-size: 11px; font-weight: 500;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          flex: 1; min-width: 0;
-        }}
-        .ds-bar-dur {{
-          font-size: 10px; font-weight: 600;
-          padding: 1px 6px; border-radius: 3px;
+          font-size: 12px;
+          color: var(--text-normal);
           white-space: nowrap;
-          font-family: var(--font-monospace);
-        }}
-        .ds-bar-mini-icon {{
-          position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-          font-size: 12px; line-height: 1;
-        }}
-        .ds-bar-mini-dur {{
-          position: absolute; top: -3px; right: 2px;
-          font-size: 9px; font-weight: 600;
-          padding: 1px 4px; border-radius: 2px;
-          white-space: nowrap;
-          font-family: var(--font-monospace);
-          color: white;
-          line-height: 1;
-        }}
-        .ds-bar-mini {{
-          position: absolute; top: -2px; right: 4px;
-          font-size: 9px; font-weight: 600;
-          padding: 1px 4px; border-radius: 2px;
-          white-space: nowrap;
-          font-family: var(--font-monospace);
-          color: white;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 220px;
         }}
         /* ===== 动态 hover 气泡（由 JS 插入到 body） ===== */
         .ds-tooltip-popup {{
@@ -728,16 +720,6 @@ class Reporter:
           font-weight: 500;
           pointer-events: none;
           display: none;
-        }}
-        .ds-cat-pill {{
-          font-size: 10px;
-          color: white;
-          padding: 2px 8px;
-          border-radius: 10px;
-          text-align: center;
-          font-weight: 500;
-          margin-left: 8px;
-          white-space: nowrap;
         }}
 
         /* ===== 统计面板 ===== */
