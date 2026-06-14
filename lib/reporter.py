@@ -422,7 +422,6 @@ class Reporter:
 
         # JS 代码块
         js_code = f'''```dataviewjs
-        ```dataviewjs
         // ===== DayScope 甘特图 v2（更直观版本）=====
         const DATA = {tasks_json};
         const ALL = DATA.all;
