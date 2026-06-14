@@ -805,6 +805,8 @@ class Reporter:
         const root = dv.container.querySelector('.ds-gantt');
         if (root && !root.__dsTooltipBound) {{
           root.__dsTooltipBound = true;
+          // 清理掉 document.body 上以前残留的 tip DOM（防止多次渲染叠加）
+          document.querySelectorAll('.ds-tooltip-popup').forEach(el => el.remove());
           let tip = null;
           let hideTimer = 0;
           const ensureTip = () => {{
@@ -839,6 +841,8 @@ class Reporter:
             if (left < 8) left = 8;
             t.style.left = left + 'px';
             t.style.top = (r.top - tr.height - 8) + 'px';
+            // force reflow before fade in
+            void t.offsetHeight;
             t.style.opacity = '1';
           }};
           const hideTip = () => {{
