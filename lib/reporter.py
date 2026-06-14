@@ -586,20 +586,19 @@ class Reporter:
           background: var(--background-primary);
           border-radius: 10px;
           border: 1px solid var(--background-modifier-border);
+          overflow-x: auto;  /* 横向滚动 */
+          overflow-y: hidden;
         }}
         .ds-gantt-inner {{
-          width: 1600px;       /* 固定宽：24h×56px + 边距 + 时间/类目列 */
+          width: 1600px;
           max-width: none;
           box-sizing: border-box;
           padding: 12px;
         }}
-        .ds-scroll-wrap {{
+        .ds-h-scroll {{
           width: 100%;
-          overflow-x: auto;    /* 屏幕不够时左右滑动 */
-          overflow-y: visible;
+          overflow: visible;
         }}
-        .ds-scroll-wrap::-webkit-scrollbar {{ height: 8px; }}
-        .ds-scroll-wrap::-webkit-scrollbar-thumb {{ background: var(--background-modifier-border); border-radius: 4px; }}
         .ds-header {{
           display: flex; justify-content: space-between; align-items: center;
           margin-bottom: 12px; padding-bottom: 8px;
@@ -790,15 +789,14 @@ class Reporter:
         </style>
 
         <div class="ds-gantt">
-          <div class="ds-scroll-wrap">
-            <div class="ds-gantt-inner">
-          <div class="ds-header">
+          <div class="ds-header ds-sticky-top">
             <div>
               <div class="ds-title-main">📊 今日进度</div>
               <div class="ds-title-sub">${{ALL.length}} 个任务 · 覆盖 ${{DATA.stats.done}}/24 小时</div>
             </div>
           </div>
-
+          <div class="ds-h-scroll">  <!-- overflow-x: auto，实际滚动 -->
+            <div class="ds-gantt-inner">
           <!-- 时间锚点 -->
           <div class="ds-timeline">
             ${{majorMarkers}}
@@ -816,8 +814,9 @@ class Reporter:
           ${{renderGroup("afternoon", "下午", "☀️")}}
           ${{renderGroup("evening",   "晚上", "🌆")}}
           ${{renderGroup("night",     "凌晨", "🌙")}}
-
-          <!-- 统计面板 -->
+            </div>  <!-- /ds-gantt-inner -->
+          </div>  <!-- /ds-h-scroll -->
+          <!-- 统计面板：放到滚动容器外 -->
           <div class="ds-stats">
             <div class="ds-stats-title">⏱️ 分类时间分布</div>
             <div class="ds-cats">${{catChips}}</div>
@@ -827,8 +826,6 @@ class Reporter:
               <span>🟨 支线 <b>${{DATA.side.length}}</b></span>
             </div>
           </div>
-            </div>  <!-- /ds-gantt-inner -->
-          </div>  <!-- /ds-scroll-wrap -->
         </div>
         `;
 
@@ -839,7 +836,7 @@ class Reporter:
         // 9 点 = 9/24 比例 = 0.375
         // 页面加载后 scrollLeft = 9/24 * 1600 - 200 = 约 400
         requestAnimationFrame(() => {{
-          const wrap = dv.container.querySelector('.ds-scroll-wrap');
+          const wrap = dv.container.querySelector('.ds-h-scroll');
           if (wrap) {{
             // 设定 9 点为初始可视位置
             const inner = wrap.querySelector('.ds-gantt-inner');
@@ -851,6 +848,63 @@ class Reporter:
             }}
           }}
         }});
+
+        // === 手动实现 sticky（避开 CSS sticky 被 overflow 破坏的问题） ===
+        // 纵向上：.ds-group-label 钉在 viewport 顶部（当 scroll 上滚出 .ds-gantt 顶部时）
+        // 横向上：.ds-time 钉在 .ds-gantt 左边
+        const ganttEl2 = dv.container.querySelector('.ds-gantt');
+        const hScrollEl = dv.container.querySelector('.ds-h-scroll');
+        if (ganttEl2 && hScrollEl && !ganttEl2.__dsStickyBound) {{
+          ganttEl2.__dsStickyBound = true;
+          let raf = 0;
+          const update = () => {{
+            raf = 0;
+            // 纵向：ds-group-label 钉到 .ds-h-scroll 顶
+            const labels = ganttEl2.querySelectorAll('.ds-group-label');
+            const hRect = hScrollEl.getBoundingClientRect();
+            let pinned = null;
+            labels.forEach(label => {{
+              const r = label.getBoundingClientRect();
+              if (r.top < hRect.top + 2) {{
+                if (!pinned || r.top > pinned.getBoundingClientRect().top) {{
+                  pinned = label;
+                }}
+              }}
+            }});
+            // 临时“克隆” pinned label 到 fixed 位置
+            let clone = ganttEl2.__dsClone;
+            if (pinned) {{
+              const rect = pinned.getBoundingClientRect();
+              if (!clone) {{
+                clone = pinned.cloneNode(true);
+                clone.style.position = 'fixed';
+                clone.style.left = rect.left + 'px';
+                clone.style.top = hRect.top + 'px';
+                clone.style.width = rect.width + 'px';
+                clone.style.zIndex = '100';
+                clone.style.background = 'var(--background-primary)';
+                clone.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                document.body.appendChild(clone);
+                ganttEl2.__dsClone = clone;
+              }} else {{
+                clone.innerHTML = pinned.innerHTML;
+                clone.style.left = rect.left + 'px';
+                clone.style.top = hRect.top + 'px';
+                clone.style.width = rect.width + 'px';
+                clone.style.display = 'block';
+              }}
+            }} else if (clone) {{
+              clone.style.display = 'none';
+            }}
+          }};
+          const onScroll = () => {{
+            if (raf) return;
+            raf = requestAnimationFrame(update);
+          }};
+          window.addEventListener('scroll', onScroll, {{ passive: true }});
+          hScrollEl.addEventListener('scroll', onScroll, {{ passive: true }});
+          update();
+        }}
 
         // === 动态 hover 气泡（不依赖 CSS ::after，避免被裁切） ===
         // 事件代理：在 .ds-gantt 根上监听 mouseover/mouseout
