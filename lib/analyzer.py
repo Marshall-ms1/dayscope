@@ -56,13 +56,38 @@ class AIAnalyzer:
             .replace("{count}", str(len(images)))
             .replace("{prev_summary}", prev_summary or "（无）"))
 
+        # 1.1 先用 PIL 算相邻图视觉差，识别"未变化"图，标挂机跳过 AI 调用
+        visual_diff_map = self._compute_visual_diff(images)
+        unchanged_indices = [i for i, d in visual_diff_map.items() if d < 5.0]
+        log.info("视觉去重：%d / %d 张与上张几乎相同（不需要 AI 识别）",
+                 len(unchanged_indices), len(images))
+
         events = []
-        for batch in self._chunks(images, self.max_images_per_call):
-            log.info("视觉 batch %d 张（图 %s - %s）", len(batch),
-                     batch[0].name, batch[-1].name)
-            batch_events = self._call_vision_batch(batch, rendered_vision)
-            if batch_events:
-                events.extend(batch_events)
+        # 先把“未变化”图标为挂机 event
+        for i in unchanged_indices:
+            fname = images[i].stem
+            time_str = ""
+            if len(fname) == 15 and fname[8] == "-":
+                time_str = fname
+            events.append({
+                "app": "?",
+                "category": "挂机",
+                "activity": "电脑前休息",
+                "details": "未产生交互，屏幕与上分钟几乎一致",
+                "outcome": "none",
+                "_raw_time": time_str,
+                "_raw_filename": fname,
+                "time": f"{time_str[9:11]}:{time_str[11:13]}" if time_str else "",
+            })
+        # 剩下的"可能有变化"的图，调用 AI 识别
+        images_to_recognize = [img for i, img in enumerate(images) if i not in unchanged_indices]
+        if images_to_recognize:
+            for batch in self._chunks(images_to_recognize, self.max_images_per_call):
+                log.info("视觉 batch %d 张（图 %s - %s）", len(batch),
+                         batch[0].name, batch[-1].name)
+                batch_events = self._call_vision_batch(batch, rendered_vision)
+                if batch_events:
+                    events.extend(batch_events)
 
         if not events:
             log.warning("视觉识别全部失败，无法做任务归纳")
@@ -96,11 +121,29 @@ class AIAnalyzer:
         # 兜底：补全 task 缺漏的 start/end/outcomes
         tasks = self._fill_task_gaps(aggregate.get("tasks", []), events)
 
+        # 程序计算 focus/productivity（不受 AI 幻觉影响）
+        # focus = 1 - 挂机事件占比
+        idle_count = sum(1 for e in events if e.get("category") in ("挂机", "休息"))
+        total = len(events) if events else 1
+        idle_ratio = idle_count / total
+        computed_focus = max(0.0, 1.0 - idle_ratio)
+        # productivity = 有 outcome 不为 none 的事件占比
+        productive_count = sum(1 for e in events
+                               if e.get("outcome") not in ("none", "", None))
+        computed_productivity = productive_count / total
+
+        # 覆盖 AI 的 幻觉分数（如果 AI 算的 < 0.1 但我们算 0.0，取我们为准）
+        ai_focus = aggregate.get("focus_score", 0.5)
+        ai_productivity = aggregate.get("productivity_score", 0.5)
+        # 以我们算的为准，AI 分数仅作参考
+        final_focus = round(computed_focus, 2)
+        final_productivity = round(computed_productivity, 2)
+
         return {
             "summary": aggregate.get("summary", ""),
             "mode": aggregate.get("mode", "混合"),
-            "focus_score": aggregate.get("focus_score", 0.5),
-            "productivity_score": aggregate.get("productivity_score", 0.5),
+            "focus_score": final_focus,
+            "productivity_score": final_productivity,
             "events": events,
             "tasks": tasks,
             "insights": aggregate.get("insights", []),
@@ -250,6 +293,28 @@ class AIAnalyzer:
     def _chunks(self, lst, n):
         for i in range(0, len(lst), n):
             yield lst[i:i + n]
+
+    def _compute_visual_diff(self, images: list) -> dict:
+        """计算相邻图片的像素差（0=完全相同，越大越不同）
+
+        返回 {idx: diff_score}。第一张默认为 999（需要 AI 识别）
+        """
+        from PIL import Image
+        diffs = {0: 999.0}  # 第一张总需要 AI 看
+        prev_small = None
+        for i, img_path in enumerate(images):
+            try:
+                img = Image.open(img_path).convert("L").resize((64, 64), Image.LANCZOS)
+                if prev_small is not None:
+                    p1 = list(prev_small.getdata())
+                    p2 = list(img.getdata())
+                    diff = sum(abs(a - b) for a, b in zip(p1, p2)) / len(p1)
+                    diffs[i] = diff
+                prev_small = img
+            except Exception as e:
+                log.warning("算视觉差失败 %s: %s", img_path, e)
+                diffs[i] = 999.0
+        return diffs
 
     def _fill_task_gaps(self, tasks: list, events: list) -> list:
         """兜底逻辑：补全 AI 可能漏填的 start/end/outcomes/details
