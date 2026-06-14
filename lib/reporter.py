@@ -583,23 +583,23 @@ class Reporter:
         .ds-gantt {{
           font-family: var(--font-interface);
           font-size: 12px;
-          margin: 8px 0 16px 0;
-          padding: 12px;
           background: var(--background-primary);
           border-radius: 10px;
           border: 1px solid var(--background-modifier-border);
-          width: 1600px;  /* 固定宽：24h×66px + 边距 ＋时间/类目列 */
-          max-width: none;  /* 盖掉主题默认 max-width */
-          min-width: 100%;
+        }}
+        .ds-gantt-inner {{
+          width: 1600px;       /* 固定宽：24h×56px + 边距 + 时间/类目列 */
+          max-width: none;
           box-sizing: border-box;
+          padding: 12px;
         }}
         .ds-scroll-wrap {{
           width: 100%;
-          overflow-x: auto;  /* 屏幕不够时左右滚动 */
+          overflow-x: auto;    /* 屏幕不够时左右滑动 */
           overflow-y: visible;
-          margin: 0 -12px;
-          padding: 0 12px;
         }}
+        .ds-scroll-wrap::-webkit-scrollbar {{ height: 8px; }}
+        .ds-scroll-wrap::-webkit-scrollbar-thumb {{ background: var(--background-modifier-border); border-radius: 4px; }}
         .ds-header {{
           display: flex; justify-content: space-between; align-items: center;
           margin-bottom: 12px; padding-bottom: 8px;
@@ -652,6 +652,12 @@ class Reporter:
           font-size: 12px; font-weight: 600;
           padding: 0 4px 6px 4px;
           color: var(--text-normal);
+          /* sticky 顶部：纵向滚动时钉住 */
+          position: sticky;
+          top: 0;
+          z-index: 5;
+          background: var(--background-primary);
+          border-bottom: 1px solid var(--background-modifier-border);
         }}
         .ds-group-time {{ font-size: 10px; color: var(--text-muted); font-weight: normal; font-family: var(--font-monospace); }}
 
@@ -671,6 +677,12 @@ class Reporter:
           font-size: 11px;
           color: var(--text-muted);
           padding-left: 4px;
+          /* sticky 左侧：横向滚动时钉住 */
+          position: sticky;
+          left: 0;
+          z-index: 4;
+          background: var(--background-primary);
+          border-right: 1px solid var(--background-modifier-border);
         }}
         .ds-bar-wrap {{
           position: relative;
@@ -778,6 +790,8 @@ class Reporter:
         </style>
 
         <div class="ds-gantt">
+          <div class="ds-scroll-wrap">
+            <div class="ds-gantt-inner">
           <div class="ds-header">
             <div>
               <div class="ds-title-main">📊 今日进度</div>
@@ -813,10 +827,30 @@ class Reporter:
               <span>🟨 支线 <b>${{DATA.side.length}}</b></span>
             </div>
           </div>
+            </div>  <!-- /ds-gantt-inner -->
+          </div>  <!-- /ds-scroll-wrap -->
         </div>
         `;
 
         dv.container.innerHTML = html;
+
+        // === 初始滚动：定位到 9 点处 ===
+        // 在 .ds-gantt-inner 里，24h 占总宽 1600px - 边距 24px - 64px(时间列) - 120px(分类列) = ~1392px 可用
+        // 9 点 = 9/24 比例 = 0.375
+        // 页面加载后 scrollLeft = 9/24 * 1600 - 200 = 约 400
+        requestAnimationFrame(() => {{
+          const wrap = dv.container.querySelector('.ds-scroll-wrap');
+          if (wrap) {{
+            // 设定 9 点为初始可视位置
+            const inner = wrap.querySelector('.ds-gantt-inner');
+            if (inner) {{
+              const innerW = inner.scrollWidth;
+              // 9 点对齐在容器左边 60px 处（预留时间列宽）
+              const target = (9 / 24) * (innerW - 200) - 60;
+              wrap.scrollLeft = Math.max(0, target);
+            }}
+          }}
+        }});
 
         // === 动态 hover 气泡（不依赖 CSS ::after，避免被裁切） ===
         // 事件代理：在 .ds-gantt 根上监听 mouseover/mouseout
