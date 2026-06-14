@@ -651,7 +651,7 @@ class Reporter:
           display: grid;
           grid-template-columns: 56px 1fr 240px 80px;
           align-items: center;
-          height: 32px;
+          height: 40px;
           margin: 0;
           padding: 0;
           gap: 10px;
@@ -665,15 +665,15 @@ class Reporter:
         }}
         .ds-bar-wrap {{
           position: relative;
-          height: 32px;
-          /* 贯穿全行的背景轨道（14px 高的浅色带状区域，不是1px细线） */
+          height: 40px;
+          /* 贯穿全行的背景轨道（20px 高的浅色带状区域） */
           background: linear-gradient(to bottom,
             transparent 0,
-            transparent 9px,
-            rgba(255,255,255,0.06) 9px,
-            rgba(255,255,255,0.06) 23px,
-            transparent 23px,
-            transparent 32px);
+            transparent 10px,
+            rgba(255,255,255,0.06) 10px,
+            rgba(255,255,255,0.06) 30px,
+            transparent 30px,
+            transparent 40px);
           overflow: visible;  /* 允许 hover 气泡出 wrap 边界 */
           min-width: 0;
         }}
@@ -681,8 +681,8 @@ class Reporter:
           position: absolute;
           top: 50%;
           transform: translateY(-50%);
-          height: 18px;       /* 粗一点的胶囊 */
-          border-radius: 9px; /* 全圆角 */
+          height: 26px;        /* 更粗的胶囊 */
+          border-radius: 13px; /* 全圆角 */
           box-shadow: 0 1px 2px rgba(0,0,0,0.15);
           cursor: pointer;
           transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
