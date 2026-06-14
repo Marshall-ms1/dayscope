@@ -646,3 +646,376 @@ dv.container.innerHTML = html;
             path.write_text(new_text, encoding="utf-8")
             log.info("插入日报甘特图块: %s", path)
         return path
+
+    # =================== 年度日历看板 ===================
+    def write_calendar_overview(self, year: int = None) -> Path:
+        """生成年度日历看板（dataviewjs 实现 + 点击跳转到日报）
+
+        文件路径：output_dir/📅日历.md（放在所有日期文件夹的外侧）
+        每天颜色 = 活跃小时数（绿色深浅梯度）
+        点击格子 → 跳到当日日报
+        """
+        import json
+        from datetime import date, timedelta
+        from calendar import monthrange
+
+        if year is None:
+            year = datetime.now().year
+
+        # 1. 聚合每年每天的活跃数据
+        daily = self._aggregate_year_daily(year)
+
+        # 2. 构建 365 天数据
+        days = []
+        start = date(year, 1, 1)
+        end = date(year, 12, 31)
+        cur = start
+        while cur <= end:
+            d_str = cur.strftime("%Y-%m-%d")
+            d = daily.get(d_str, {})
+            days.append({
+                "date": d_str,
+                "active": d.get("active_hours", 0),
+                "focus": round(d.get("avg_focus", 0), 2),
+                "events": d.get("total_events", 0),
+            })
+            cur += timedelta(days=1)
+
+        # 3. 月度统计
+        monthly = {}
+        for d in days:
+            m = d["date"][:7]
+            if m not in monthly:
+                monthly[m] = {"active": 0, "focus_sum": 0, "days": 0, "events": 0}
+            monthly[m]["active"] += d["active"]
+            monthly[m]["focus_sum"] += d["focus"]
+            monthly[m]["events"] += d["events"]
+            monthly[m]["days"] += 1
+        months = []
+        for m in sorted(monthly.keys()):
+            s = monthly[m]
+            avg_f = s["focus_sum"] / s["days"] if s["days"] > 0 else 0
+            months.append({
+                "month": m,
+                "active": s["active"],
+                "avg_focus": round(avg_f, 2),
+                "events": s["events"],
+            })
+
+        # 4. 渲染 dataviewjs 块
+        days_json = json.dumps(days, ensure_ascii=False, separators=(",", ":"))
+        months_json = json.dumps(months, ensure_ascii=False, separators=(",", ":"))
+
+        js_template = '''```dataviewjs
+// ===== DayScope 年度日历看板（程序自动生成）=====
+const DAYS = __DAYS__;
+const MONTHS = __MONTHS__;
+const YEAR = __YEAR__;
+
+function colorByHours(h) {
+  if (h === 0) return "#ebedf0";
+  if (h < 2)  return "#9be9a8";
+  if (h < 5)  return "#40c463";
+  if (h < 10) return "#30a14e";
+  return "#216e39";
+}
+function labelByHours(h) {
+  if (h === 0) return "无活动";
+  if (h < 2)  return "1-2h";
+  if (h < 5)  return "2-5h";
+  if (h < 10) return "5-10h";
+  return "10h+";
+}
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+function renderMonth(monthStr) {
+  const [y, m] = monthStr.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const last  = new Date(y, m, 0);
+  const daysInMonth = last.getDate();
+  const startWeekday = first.getDay(); // 0=Sun, 1=Mon, ...
+  const monthDays = DAYS.filter(d => d.date.startsWith(monthStr));
+  // 周一开始：startWeekday 0=Sun → 6=offset, 1=Mon → 0=offset
+  const offset = (startWeekday + 6) % 7;
+  let cells = "";
+  for (let i = 0; i < offset; i++) {
+    cells += `<div class="ds-cell empty"></div>`;
+  }
+  for (let i = 0; i < daysInMonth; i++) {
+    const dd = monthDays[i];
+    const color = colorByHours(dd.active);
+    const dateStr = dd.date;
+    const title = `${dateStr} · ${labelByHours(dd.active)} · 专注度 ${(dd.focus*100).toFixed(0)}% · ${dd.events} 事件`;
+    cells += `<a class="ds-cell"
+                 href="${dateStr}/日报.md"
+                 style="background:${color};"
+                 title="${title}"></a>`;
+  }
+  return `<div class="ds-month">
+    <div class="ds-month-name">${m}月</div>
+    <div class="ds-month-grid">${cells}</div>
+  </div>`;
+}
+
+const monthNames = ["一","二","三","四","五","六","七","八","九","十","十一","十二"];
+const monthBlocks = monthNames.map((n, i) => renderMonth(`${YEAR}-${pad2(i+1)}`)).join("");
+
+const monthStatsHtml = MONTHS.map(m => {
+  const focusPct = (m.avg_focus*100).toFixed(0);
+  return `<div class="ds-mstat">
+    <div class="ds-mstat-name">${m.month}</div>
+    <div class="ds-mstat-active">⚡ ${m.active}h</div>
+    <div class="ds-mstat-focus">🎯 ${focusPct}%</div>
+    <div class="ds-mstat-events">📊 ${m.events}</div>
+  </div>`;
+}).join("");
+
+// 总览
+const totalActive = MONTHS.reduce((a,b) => a+b.active, 0);
+const totalDays = DAYS.filter(d => d.events > 0).length;
+const yearAvgFocus = MONTHS.length > 0
+  ? (MONTHS.reduce((a,b)=>a+b.avg_focus,0) / MONTHS.length * 100).toFixed(0)
+  : 0;
+
+const html = `
+<style>
+.ds-cal {
+  font-family: var(--font-interface);
+  font-size: 12px;
+  padding: 20px;
+  background: var(--background-primary);
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  max-width: 920px;
+}
+.ds-cal-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.ds-cal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+.ds-cal-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 16px;
+}
+.ds-cal-summary span strong {
+  color: var(--text-accent);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.ds-months {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px 24px;
+  margin-bottom: 20px;
+}
+.ds-month {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ds-month-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.ds-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.ds-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: #ebedf0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: block;
+  text-decoration: none;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+.ds-cell:hover {
+  transform: scale(1.5);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.25);
+  z-index: 10;
+  position: relative;
+  border-color: rgba(0,0,0,0.2);
+}
+.ds-cell.empty {
+  background: transparent !important;
+  border: none !important;
+  pointer-events: none;
+}
+.ds-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 12px 0;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 8px;
+}
+.ds-legend-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  display: inline-block;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+.ds-mstats {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.ds-mstat {
+  padding: 10px 6px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  text-align: center;
+  transition: transform 0.15s;
+}
+.ds-mstat:hover { transform: translateY(-2px); }
+.ds-mstat-name {
+  font-weight: 600;
+  color: var(--text-normal);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.ds-mstat-active {
+  font-size: 13px;
+  color: #30a14e;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.ds-mstat-focus {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.ds-mstat-events {
+  font-size: 10px;
+  color: var(--text-faint, var(--text-muted));
+}
+</style>
+
+<div class="ds-cal">
+  <div class="ds-cal-header">
+    <div class="ds-cal-title">📅 ${YEAR} 年活跃度看板</div>
+    <div class="ds-cal-summary">
+      <span>有数据 <strong>${totalDays}</strong> 天</span>
+      <span>总活跃 <strong>${totalActive}h</strong></span>
+      <span>年均专注 <strong>${yearAvgFocus}%</strong></span>
+    </div>
+  </div>
+  <div class="ds-months">${monthBlocks}</div>
+  <div class="ds-legend">
+    <span>活跃度：</span>
+    <span class="ds-legend-cell" style="background:#ebedf0"></span> 无
+    <span class="ds-legend-cell" style="background:#9be9a8"></span> 1-2h
+    <span class="ds-legend-cell" style="background:#40c463"></span> 2-5h
+    <span class="ds-legend-cell" style="background:#30a14e"></span> 5-10h
+    <span class="ds-legend-cell" style="background:#216e39"></span> 10h+
+    <span style="margin-left:auto;">💡 悬停查看详情 · 点击跳转到日报</span>
+  </div>
+  <div class="ds-mstats">${monthStatsHtml}</div>
+</div>
+`;
+
+dv.container.innerHTML = html;
+```'''
+
+        js_code = js_template
+        js_code = js_code.replace("__DAYS__", days_json)
+        js_code = js_code.replace("__MONTHS__", months_json)
+        js_code = js_code.replace("__YEAR__", str(year))
+
+        # 5. 写文件
+        path = self.output_dir / f"📅日历-{year}.md"
+        # Python 侧也计算总览（用于文件末尾文字）
+        total_active = sum(m["active"] for m in months)
+        total_days = sum(1 for d in days if d["events"] > 0)
+        header = (
+            f"# 📅 DayScope 日历看板 · {year}\n\n"
+            f"> 自动统计每日活跃度 · 点击单元格查看日报详情\n\n"
+            f"{js_code}\n\n"
+            f"_最后更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · 共 {total_active} 小时 · 覆盖 {total_days} 天_\n"
+        )
+        path.write_text(header, encoding="utf-8")
+        log.info("已写入年度日历看板: %s", path)
+        return path
+
+    def _aggregate_year_daily(self, year: int) -> dict:
+        """从 state/hourly_results.json 聚合年度每天数据"""
+        from pathlib import Path
+        import json as _json
+
+        # state 文件路径
+        state_path = Path(__file__).parent.parent / "state" / "hourly_results.json"
+        if not state_path.exists():
+            return {}
+
+        try:
+            with open(state_path) as f:
+                all_results = _json.load(f)
+        except Exception as e:
+            log.warning("读 hourly_results.json 失败: %s", e)
+            return {}
+
+        daily = {}
+        year_str = str(year)
+        for key, result in all_results.items():
+            if "_" not in key:
+                continue
+            # key 格式: 2026-06-14_10
+            parts = key.rsplit("_", 1)
+            if len(parts) != 2:
+                continue
+            date_str, hour_str = parts
+            if not date_str.startswith(year_str):
+                continue
+            try:
+                hour = int(hour_str)
+            except (ValueError, TypeError):
+                continue
+
+            events = result.get("events", [])
+            if not events:
+                continue
+
+            idle = sum(1 for e in events if e.get("category") in ("挂机", "休息"))
+            idle_ratio = idle / len(events)
+            activity = 1 - idle_ratio
+
+            if date_str not in daily:
+                daily[date_str] = {
+                    "active_hours": 0,
+                    "total_hours": 0,
+                    "focus_sum": 0.0,
+                    "total_events": 0,
+                }
+            if activity > 0.1:
+                daily[date_str]["active_hours"] += 1
+            daily[date_str]["total_hours"] += 1
+            daily[date_str]["focus_sum"] += activity
+            daily[date_str]["total_events"] += len(events)
+
+        # 算日均 focus
+        for d in daily.values():
+            if d["total_hours"] > 0:
+                d["avg_focus"] = d["focus_sum"] / d["total_hours"]
+            else:
+                d["avg_focus"] = 0
+
+        return daily

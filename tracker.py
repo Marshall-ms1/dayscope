@@ -293,6 +293,13 @@ class Tracker:
 
         state[date_str] = {"generated_at": now.isoformat()}
         save_state("daily_reports", state)
+
+        # 刷新年度日历看板
+        try:
+            self.reporter.write_calendar_overview(now.year)
+        except Exception as e:
+            self.log.error("刷新日历看板失败: %s", e)
+
         self.log.info("✓ 完成日报: %s", date_str)
 
     def _fallback_daily_summary(self, today_results: dict) -> dict:
@@ -432,12 +439,20 @@ def main():
     parser = argparse.ArgumentParser(description="DayScope")
     parser.add_argument("--once-screenshot", action="store_true",
                         help="只截一次图就退出（调试用）")
+    parser.add_argument("--write-calendar", metavar="YYYY", type=int, nargs="?",
+                        help="生成年度日历看板（默认当前年）")
     parser.add_argument("--once-analyze", metavar="YYYY-MM-DD/HH",
                         help="分析指定小时然后退出（调试用）")
     parser.add_argument("--config", default=str(CONFIG_PATH))
     args = parser.parse_args()
 
     tracker = Tracker(Path(args.config))
+
+    if args.write_calendar is not None:
+        year = args.write_calendar or datetime.now().year
+        out = tracker.reporter.write_calendar_overview(year)
+        print(f"已生成日历看板: {out}")
+        return
 
     if args.once_screenshot:
         tracker.job_screenshot()
